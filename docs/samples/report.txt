@@ -1,0 +1,16 @@
+HeatLens scan 11111111-2222-4333-A444-555555555555
+Started: 2033-05-18T03:33:20Z; interval: 5.0 s
+System: 31.0% busy, memory pressure normal, thermal nominal
+Groups:
+- opencode [opencode, high] root PID 700, project: ~/Developer/orchard-notes
+- node <script> [node script, medium] root PID 710, project: ~/Developer/idea-garden
+Findings (ranked):
+- [medium] Sustained high CPU: opencode: This workload used 64.0% of one CPU core during the scan and looks like active work, not junk.
+  Evidence: Workload label=<arguments redacted> (argv token); Project=~/Developer/orchard-notes (cwd); Group CPU=64.0% (sample interval delta)
+  Limitations: High CPU can be useful work; this finding does not mean the process is unwanted.
+- [review] Potential detached worker: This project worker has PPID 1, has run for 53.0 h, and used only 0.0%; it merits review but is not causing meaningful heat now.
+  Evidence: Workload label=<arguments redacted> (argv script path); Project=~/Developer/idea-garden (cwd); Parent PID=1 (process sample); Uptime=53.0 h (process start time); Group CPU=0.0% (sample interval delta)
+  Limitations: PPID 1 is a clue, not proof.; This does not prove it is unused.
+Processes (top 15 by CPU, plus any named in a finding):
+- PID 700 opencode; CPU 64.0%; cwd ~/Developer/orchard-notes; argv opencode <3 args redacted>
+- PID 710 node; CPU 0.0%; cwd ~/Developer/idea-garden; argv node <1 args redacted>

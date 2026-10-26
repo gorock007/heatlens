@@ -48,10 +48,13 @@ swift run heatlens-probe
 
 ## Status
 
-Phase 1 (read-only MVP) in progress; process termination is not implemented.
+Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; not yet signed/notarized.
 
 ## Documentation
 
 - [docs/PRD.md](docs/PRD.md)
 - [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
 - [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+- [docs/SCENARIOS.md](docs/SCENARIOS.md)
+- [docs/samples/](docs/samples/) (synthetic [text](docs/samples/report.txt) and [JSON](docs/samples/report.json) reports)

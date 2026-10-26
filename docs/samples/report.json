@@ -1,0 +1,216 @@
+{
+  "findings" : [
+    {
+      "affectedPIDs" : [
+        700
+      ],
+      "confidence" : "high",
+      "evidence" : [
+        {
+          "label" : "Workload label",
+          "source" : "argv token",
+          "value" : "<arguments redacted>"
+        },
+        {
+          "label" : "Project",
+          "source" : "cwd",
+          "value" : "~/Developer/orchard-notes"
+        },
+        {
+          "label" : "Group CPU",
+          "source" : "sample interval delta",
+          "value" : "64.0%"
+        }
+      ],
+      "explanation" : "This workload used 64.0% of one CPU core during the scan and looks like active work, not junk.",
+      "id" : "C78AB831-7D2D-4CBB-ACF4-157764E31546",
+      "limitations" : [
+        "High CPU can be useful work; this finding does not mean the process is unwanted."
+      ],
+      "recommendedActions" : [
+        {
+          "kind" : "inspect",
+          "pid" : 700
+        },
+        {
+          "kind" : "openProject",
+          "path" : "~/Developer/orchard-notes"
+        },
+        {
+          "kind" : "copyCommand",
+          "pid" : 700
+        },
+        {
+          "kind" : "openActivityMonitor"
+        },
+        {
+          "kind" : "copyReport"
+        }
+      ],
+      "severity" : "medium",
+      "title" : "Sustained high CPU: opencode"
+    },
+    {
+      "affectedPIDs" : [
+        710
+      ],
+      "confidence" : "medium",
+      "evidence" : [
+        {
+          "label" : "Workload label",
+          "source" : "argv script path",
+          "value" : "<arguments redacted>"
+        },
+        {
+          "label" : "Project",
+          "source" : "cwd",
+          "value" : "~/Developer/idea-garden"
+        },
+        {
+          "label" : "Parent PID",
+          "source" : "process sample",
+          "value" : "1"
+        },
+        {
+          "label" : "Uptime",
+          "source" : "process start time",
+          "value" : "53.0 h"
+        },
+        {
+          "label" : "Group CPU",
+          "source" : "sample interval delta",
+          "value" : "0.0%"
+        }
+      ],
+      "explanation" : "This project worker has PPID 1, has run for 53.0 h, and used only 0.0%; it merits review but is not causing meaningful heat now.",
+      "id" : "4436B2F7-88FD-4C49-AB55-CD8E8F3952BB",
+      "limitations" : [
+        "PPID 1 is a clue, not proof.",
+        "This does not prove it is unused."
+      ],
+      "recommendedActions" : [
+        {
+          "kind" : "inspect",
+          "pid" : 710
+        },
+        {
+          "kind" : "openProject",
+          "path" : "~/Developer/idea-garden"
+        },
+        {
+          "kind" : "copyCommand",
+          "pid" : 710
+        },
+        {
+          "kind" : "openActivityMonitor"
+        },
+        {
+          "kind" : "copyReport"
+        },
+        {
+          "kind" : "requestStop",
+          "pid" : 710
+        }
+      ],
+      "severity" : "review",
+      "title" : "Potential detached worker"
+    }
+  ],
+  "groups" : [
+    {
+      "confidence" : "high",
+      "evidence" : [
+        {
+          "label" : "Workload label",
+          "source" : "argv token",
+          "value" : "<arguments redacted>"
+        },
+        {
+          "label" : "Project",
+          "source" : "cwd",
+          "value" : "~/Developer/orchard-notes"
+        }
+      ],
+      "kind" : "opencode",
+      "label" : "opencode",
+      "memberPIDs" : [
+        700
+      ],
+      "project" : {
+        "basis" : "cwd",
+        "confidence" : "high",
+        "directory" : "~/Developer/orchard-notes"
+      },
+      "rootPID" : 700
+    },
+    {
+      "confidence" : "medium",
+      "evidence" : [
+        {
+          "label" : "Workload label",
+          "source" : "argv script path",
+          "value" : "<arguments redacted>"
+        },
+        {
+          "label" : "Project",
+          "source" : "cwd",
+          "value" : "~/Developer/idea-garden"
+        }
+      ],
+      "kind" : "node script",
+      "label" : "node <script>",
+      "memberPIDs" : [
+        710
+      ],
+      "project" : {
+        "basis" : "cwd",
+        "confidence" : "high",
+        "directory" : "~/Developer/idea-garden"
+      },
+      "rootPID" : 710
+    }
+  ],
+  "hostBusyPercent" : 31,
+  "interval" : 5,
+  "memoryPressure" : "normal",
+  "notices" : [
+
+  ],
+  "processes" : [
+    {
+      "arguments" : [
+        "opencode",
+        "<3 args redacted>"
+      ],
+      "cpuPercent" : 64,
+      "currentDirectory" : "~/Developer/orchard-notes",
+      "detailAccess" : "available",
+      "executablePath" : "~/.local/bin/opencode",
+      "footprintBytes" : 100663296,
+      "name" : "opencode",
+      "owner" : "currentUser",
+      "parentPID" : 1,
+      "pid" : 700,
+      "residentBytes" : 67108864
+    },
+    {
+      "arguments" : [
+        "node",
+        "<1 args redacted>"
+      ],
+      "cpuPercent" : 0,
+      "currentDirectory" : "~/Developer/idea-garden",
+      "detailAccess" : "available",
+      "executablePath" : "/usr/local/bin/node",
+      "footprintBytes" : 100663296,
+      "name" : "node",
+      "owner" : "currentUser",
+      "parentPID" : 1,
+      "pid" : 710,
+      "residentBytes" : 67108864
+    }
+  ],
+  "scanID" : "11111111-2222-4333-A444-555555555555",
+  "startedAt" : "2033-05-18T03:33:20Z",
+  "thermalState" : "nominal"
+}
