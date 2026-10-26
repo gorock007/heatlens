@@ -25,4 +25,4 @@ Usage band: green (5h 11% used, 17:09)
 - After Phase 1: add the app build (`scripts/run-app.sh --build-only`) to the Checks line in CLAUDE.md + AGENTS.md.
 - Phase 2: safe stop (FR-09: SIGTERM, PID/start-time revalidation, denylist) on fable, plus a gpt-5.6-sol security review of it. Detail screen, exclusions/settings, optional history. Perf profiling (FR-12).
 - Phase 2 end-to-end click-through of the popover: codex gpt-6-astra (computer use).
-- Jarvis/user only: real signing + notarization; no git remote yet (JARVIS_PUSH=0). Ask the user if they want a GitHub repo.
+- Jarvis/user only: real signing + notarization. Remote: github.com/gorock007/heatlens (PUBLIC); branch tracks origin/main, push.default=upstream, commits use the noreply email.
