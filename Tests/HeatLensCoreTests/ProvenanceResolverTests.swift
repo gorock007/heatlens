@@ -34,15 +34,16 @@ struct ProvenanceResolverTests {
         let claude = try #require(groups.first(where: { $0.kind == "claude" }))
         #expect(claude.root.pid == 702)
         #expect(Set(claude.members.map(\.pid)) == Set([702, 703, 704]))
-        #expect(groups.first(where: { $0.kind == "superset" }) != nil)
+        #expect(groups.first(where: { $0.kind == "app" && $0.label == "Superset" }) != nil)
     }
 
-    @Test("Unknown restricted process remains an Unknown project without crashing")
+    @Test("Unknown restricted process remains low confidence without putting project text in its label")
     func restrictedProcess() throws {
         let group = try #require(ProvenanceResolver.resolve(SyntheticSnapshots.restricted).first)
         #expect(group.kind == "unknown")
         #expect(group.project == nil)
-        #expect(group.label.contains("Unknown project"))
+        #expect(group.label == "Unclassified background processes")
+        #expect(!group.label.contains("Unknown project"))
         #expect(group.confidence == .low)
     }
 
@@ -56,7 +57,7 @@ struct ProvenanceResolverTests {
         )
         let group = try #require(ProvenanceResolver.resolve(SyntheticSnapshots.snapshot([process])).first)
         #expect(group.kind == "next dev")
-        #expect(group.project?.directory == SyntheticSnapshots.home + "/Developer/NoCwd/node_modules/.bin")
+        #expect(group.project?.directory == SyntheticSnapshots.home + "/Developer/NoCwd")
         #expect(group.project?.basis == "argv path")
         #expect(group.project?.confidence == .medium)
     }
@@ -88,5 +89,100 @@ struct ProvenanceResolverTests {
         let process = SyntheticSnapshots.process(pid: 800, name: "node", arguments: arguments, currentDirectory: "/work")
         let group = try #require(ProvenanceResolver.resolve(SyntheticSnapshots.snapshot([process])).first)
         #expect(group.kind == expected)
+    }
+
+    @Test("Library, system, temporary, hidden, root and home paths are never projects", arguments: [
+        SyntheticSnapshots.home + "/Library/Containers/com.example.Editor/Data",
+        "/Library/Application Support/Example",
+        "/System/Library/Example",
+        "/private/var/folders/example",
+        "/var/folders/example",
+        "/tmp/example",
+        "/usr/local/share/example",
+        "/Applications/Example.app",
+        "/opt/homebrew/Cellar/example",
+        "/",
+        SyntheticSnapshots.home,
+        SyntheticSnapshots.home + "/Developer/.cache/example",
+    ])
+    func excludedProjectDirectories(path: String) throws {
+        let process = SyntheticSnapshots.process(
+            pid: 810,
+            name: "node",
+            executablePath: "/usr/local/bin/node",
+            arguments: ["node"],
+            currentDirectory: path
+        )
+        let group = try #require(ProvenanceResolver.resolve(SyntheticSnapshots.snapshot([process])).first)
+        #expect(group.project == nil)
+    }
+
+    @Test("Superset project and worktree paths remain valid and stop at meaningful roots")
+    func supersetProjectExceptions() {
+        let home = SyntheticSnapshots.home
+        let snapshot = SyntheticSnapshots.snapshot([
+            SyntheticSnapshots.process(
+                pid: 820,
+                name: "node",
+                executablePath: "/usr/local/bin/node",
+                arguments: ["node", home + "/.superset/projects/Orchard/scripts/worker.js"],
+                currentDirectory: home + "/.superset/projects/Orchard/scripts"
+            ),
+            SyntheticSnapshots.process(
+                pid: 821,
+                name: "node",
+                executablePath: "/usr/local/bin/node",
+                arguments: ["node", home + "/.superset/worktrees/HeatLens/feature-a/scripts/worker.js"],
+                currentDirectory: home + "/.superset/worktrees/HeatLens/feature-a/scripts"
+            ),
+        ])
+        let projects = Set(ProvenanceResolver.resolve(snapshot).compactMap(\.project?.directory))
+        #expect(projects == Set([
+            home + "/.superset/projects/Orchard",
+            home + "/.superset/worktrees/HeatLens/feature-a",
+        ]))
+    }
+
+    @Test("Processes in one app bundle group together even when launchd parented")
+    func appBundleGrouping() throws {
+        let groups = ProvenanceResolver.resolve(SyntheticSnapshots.appBundleFamily)
+        let chrome = try #require(groups.first(where: { $0.label == "Google Chrome" }))
+
+        #expect(chrome.kind == "app")
+        #expect(Set(chrome.members.map(\.pid)) == Set([830, 831, 832]))
+        #expect(chrome.project == nil)
+        #expect(chrome.confidence == .high)
+        #expect(!chrome.evidence.isEmpty)
+    }
+
+    @Test("Apple services collapse except protected and hot processes")
+    func systemServiceGrouping() throws {
+        let groups = ProvenanceResolver.resolve(SyntheticSnapshots.systemServiceFamily)
+        let services = try #require(groups.first(where: { $0.label == "macOS system services" }))
+
+        #expect(Set(services.members.map(\.pid)) == Set([840, 841, 842]))
+        #expect(groups.first(where: { $0.label == "kernel_task" })?.members.map(\.pid) == [843])
+        #expect(groups.first(where: { $0.label == "WindowServer" })?.members.map(\.pid) == [844])
+        #expect(groups.first(where: { $0.label == "hot-service" })?.members.map(\.pid) == [845])
+        #expect(groups.first(where: { $0.label == "macOS user services" })?.members.map(\.pid) == [846])
+    }
+
+    @Test("Labels are workload names, never project placeholders or paths")
+    func nameOnlyLabels() throws {
+        let worker = SyntheticSnapshots.process(
+            pid: 850,
+            name: "node",
+            executablePath: "/usr/local/bin/node",
+            arguments: ["node", SyntheticSnapshots.home + "/Developer/Orchard/worker.js"],
+            currentDirectory: SyntheticSnapshots.home + "/Developer/Orchard"
+        )
+        let groups = ProvenanceResolver.resolve(SyntheticSnapshots.snapshot([worker]))
+        let group = try #require(groups.first)
+
+        #expect(group.label == "node worker.js")
+        #expect(!group.label.contains("Unknown project"))
+        #expect(!group.label.contains("Orchard"))
+        #expect(group.project?.directory == SyntheticSnapshots.home + "/Developer/Orchard")
+        #expect(!group.evidence.isEmpty)
     }
 }

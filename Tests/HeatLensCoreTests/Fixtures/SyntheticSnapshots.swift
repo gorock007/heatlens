@@ -185,4 +185,40 @@ enum SyntheticSnapshots {
             ),
         ], hostBusyFraction: 0.5)
     }
+
+    static var appBundleFamily: ScanSnapshot {
+        snapshot([
+            process(
+                pid: 830,
+                name: "Google Chrome",
+                executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                arguments: ["Google Chrome"],
+                currentDirectory: home + "/Library/Application Support/Google/Chrome"
+            ),
+            process(
+                pid: 831,
+                name: "Google Chrome Helper",
+                executablePath: "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                arguments: ["Google Chrome Helper"]
+            ),
+            process(
+                pid: 832,
+                name: "Google Chrome Helper (Renderer)",
+                executablePath: "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                arguments: ["Google Chrome Helper", "--type=renderer"]
+            ),
+        ])
+    }
+
+    static var systemServiceFamily: ScanSnapshot {
+        snapshot([
+            process(pid: 840, owner: .root, name: "trustd", executablePath: "/usr/libexec/trustd", cpu: 1),
+            process(pid: 841, owner: .otherUser, name: "securityd", executablePath: "/usr/sbin/securityd", cpu: 2),
+            process(pid: 842, owner: .root, name: "diagnosticd", executablePath: "/System/Library/CoreServices/diagnosticd", cpu: 3),
+            process(pid: 843, owner: .root, name: "kernel_task", executablePath: "/System/Library/Kernels/kernel", cpu: 1),
+            process(pid: 844, owner: .currentUser, name: "WindowServer", executablePath: "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer", cpu: 2),
+            process(pid: 845, owner: .root, name: "hot-service", executablePath: "/usr/libexec/hot-service", cpu: 12),
+            process(pid: 846, owner: .currentUser, name: "ControlCenter", executablePath: "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter", cpu: 1),
+        ])
+    }
 }
