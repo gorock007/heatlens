@@ -1,0 +1,10 @@
+# Jarvis local state
+handoffs/.jev/
+handoffs/.jarvis/
+# Swift / Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/
+xcuserdata/
+.DS_Store
