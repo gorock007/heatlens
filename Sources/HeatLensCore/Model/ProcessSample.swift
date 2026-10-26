@@ -18,6 +18,14 @@ public enum DetailAccess: String, Hashable, Codable, Sendable {
     case notSupported
 }
 
+/// Where a sample's `cpu` and `residentBytes` came from, so the UI can qualify ps-derived
+/// numbers ("10 ms resolution") for processes libproc refuses.
+public enum MeasurementSource: String, Hashable, Codable, Sendable {
+    case libproc
+    /// `/bin/ps -A -o pid=,time=,rss=`, run twice; CPU resolution 10 ms.
+    case ps
+}
+
 /// One process as observed across a scan's sampling interval (PRD §4.1).
 /// `cpu` is the *delta* over the interval, never cumulative time.
 public struct ProcessSample: Identifiable, Hashable, Codable, Sendable {
@@ -38,11 +46,13 @@ public struct ProcessSample: Identifiable, Hashable, Codable, Sendable {
     public let footprintBytes: UInt64?
     public let threadCount: Int?
     public let detailAccess: DetailAccess
+    /// nil when there are no CPU/RSS figures (or for samples built before this field existed).
+    public let measurementSource: MeasurementSource?
 
     public init(identity: ProcessIdentity, parentPID: Int32, owner: ProcessOwner, name: String,
                 executablePath: String?, arguments: [String]?, currentDirectory: String?,
                 cpu: CPUTime?, cpuPercentOfOneCore: Double?, residentBytes: UInt64?, footprintBytes: UInt64?,
-                threadCount: Int?, detailAccess: DetailAccess) {
+                threadCount: Int?, detailAccess: DetailAccess, measurementSource: MeasurementSource? = nil) {
         self.identity = identity
         self.parentPID = parentPID
         self.owner = owner
@@ -56,6 +66,7 @@ public struct ProcessSample: Identifiable, Hashable, Codable, Sendable {
         self.footprintBytes = footprintBytes
         self.threadCount = threadCount
         self.detailAccess = detailAccess
+        self.measurementSource = measurementSource
     }
 
     public var pid: Int32 { identity.pid }

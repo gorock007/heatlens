@@ -1,23 +1,5 @@
 import Foundation
 
-nonisolated(unsafe) var lastLaunchError: String?
-
-/// Runs one executable directly (no shell) and captures its output. nil = could not launch (see `lastLaunchError`).
-func runTool(_ path: String, _ arguments: [String]) -> (status: Int32, stdout: String, stderr: String)? {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: path)
-    p.arguments = arguments
-    let out = Pipe(), err = Pipe()
-    p.standardOutput = out
-    p.standardError = err
-    p.standardInput = FileHandle.nullDevice
-    do { try p.run() } catch { lastLaunchError = "\(error)"; return nil }
-    let o = out.fileHandleForReading.readDataToEndOfFile()
-    let e = err.fileHandleForReading.readDataToEndOfFile()
-    p.waitUntilExit()
-    return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: e, as: UTF8.self))
-}
-
 let homeDirectory: String = {
     if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir { return String(cString: dir) }
     return NSHomeDirectory()
