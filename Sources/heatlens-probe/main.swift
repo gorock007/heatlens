@@ -5,11 +5,13 @@ import HeatLensCore
 // heatlens-probe: dev CLI over ScanCoordinator. Runs one scan and prints the system summary,
 // data-quality notices and the top processes by CPU. Prints real paths (home shown as ~) and
 // process names from this Mac: never paste its output into the repo.
-// Flags: --duration <1…15> (default 5), --no-fixtures, --top <n> (default 15).
+// Flags: --duration <1…15> (default 5), --no-fixtures, --top <n> (default 15),
+// --report (print the redacted text report the app copies, from the same ScanPipeline, and exit).
 
 var duration: Double = 5
 var useFixtures = true
 var topN = 15
+var reportMode = false
 do {
     var it = CommandLine.arguments.dropFirst().makeIterator()
     while let a = it.next() {
@@ -17,6 +19,7 @@ do {
         case "--duration": duration = Double(it.next() ?? "") ?? duration
         case "--no-fixtures": useFixtures = false
         case "--top": topN = Int(it.next() ?? "") ?? topN
+        case "--report": reportMode = true
         default: print("unknown flag \(a)"); exit(2)
         }
     }
@@ -28,11 +31,27 @@ if useFixtures {
     usleep(300_000) // let `yes` reach steady state before the first snapshot
 }
 
+func showProgress(_ elapsed: TimeInterval) {
+    FileHandle.standardError.write(Data(String(format: "\rscanning… %.0fs", elapsed).utf8))
+}
+
+if reportMode {
+    do {
+        let result = try await ScanPipeline().run(duration: duration, progress: showProgress)
+        FileHandle.standardError.write(Data("\r".utf8))
+        fixtures.stopAll()
+        print(Redactor.textReport(result.snapshot, groups: result.groups, findings: result.findings), terminator: "")
+        exit(0)
+    } catch {
+        fixtures.stopAll()
+        print("scan failed: \(error)")
+        exit(1)
+    }
+}
+
 let snapshot: ScanSnapshot
 do {
-    snapshot = try await ScanCoordinator().scan(duration: duration) { elapsed in
-        FileHandle.standardError.write(Data(String(format: "\rscanning… %.0fs", elapsed).utf8))
-    }
+    snapshot = try await ScanCoordinator().scan(duration: duration, progress: showProgress)
     FileHandle.standardError.write(Data("\r".utf8))
 } catch {
     fixtures.stopAll()

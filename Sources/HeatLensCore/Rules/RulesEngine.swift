@@ -71,6 +71,7 @@ public struct RulesEngine: Sendable {
                     ? "This workload used \(formatPercent(cpu)) of one CPU core during the scan and looks like active work, not junk."
                     : "This workload used \(formatPercent(cpu)) of one CPU core during the scan and is a current contributor."
                 candidates.append(ranked(
+                    kind: .highCPU,
                     title: "Sustained high CPU: \(group.label)",
                     severity: severity,
                     confidence: .high,
@@ -86,6 +87,7 @@ public struct RulesEngine: Sendable {
 
             if devServerKinds.contains(group.kind), uptime >= thresholds.staleUptime, cpu < thresholds.staleCPUPercent {
                 candidates.append(ranked(
+                    kind: .staleDevServer,
                     title: "Potential stale development server",
                     severity: .review,
                     confidence: .medium,
@@ -103,6 +105,7 @@ public struct RulesEngine: Sendable {
                isScriptWorkload(group: group, root: root), uptime >= thresholds.detachedUptime,
                cpu < thresholds.detachedCPUPercent {
                 candidates.append(ranked(
+                    kind: .detachedWorker,
                     title: "Potential detached worker",
                     severity: .review,
                     confidence: .medium,
@@ -151,6 +154,7 @@ private extension RulesEngine {
     }
 
     func ranked(
+        kind: FindingKind,
         title: String,
         severity: Severity,
         confidence: Confidence,
@@ -172,7 +176,8 @@ private extension RulesEngine {
                 evidence: evidence,
                 limitations: limitations,
                 affectedProcesses: group.members,
-                recommendedActions: actions(for: group, samples: samples)
+                recommendedActions: actions(for: group, samples: samples),
+                kind: kind
             ),
             impact: impact
         )
@@ -198,6 +203,7 @@ private extension RulesEngine {
         case .warning, .critical:
             let severity: Severity = memory.pressure == .critical ? .high : .medium
             candidates.append(systemFinding(
+                kind: .memoryPressure,
                 idKey: "memory-\(snapshot.id)-\(memory.pressure.rawValue)",
                 title: memory.pressure == .critical ? "Critical memory pressure" : "Memory pressure warning",
                 severity: severity,
@@ -212,6 +218,7 @@ private extension RulesEngine {
             ))
         case .normal where memory.swapUsedBytes >= thresholds.highSwapBytes:
             candidates.append(systemFinding(
+                kind: .swapInUse,
                 idKey: "swap-\(snapshot.id)",
                 title: "Swap in use with normal pressure",
                 severity: .info,
@@ -235,6 +242,7 @@ private extension RulesEngine {
             let lower = process.name.lowercased()
             if lower == "windowserver", cpu >= thresholds.windowServerCPUPercent {
                 candidates.append(processInfoFinding(
+                    kind: .uiHeavy,
                     process: process,
                     idKey: "windowserver-\(process.identity.startTimeMicros)",
                     title: "UI-heavy workload",
@@ -246,6 +254,7 @@ private extension RulesEngine {
             }
             if lower == "kernel_task", cpu >= thresholds.kernelTaskCPUPercent {
                 candidates.append(processInfoFinding(
+                    kind: .kernelTask,
                     process: process,
                     idKey: "kernel-task-\(process.identity.startTimeMicros)",
                     title: "kernel_task activity",
@@ -269,6 +278,7 @@ private extension RulesEngine {
         }
         guard let severity else { return }
         candidates.append(systemFinding(
+            kind: .thermal,
             idKey: "thermal-\(snapshot.id)-\(state.rawValue)",
             title: "Thermal state: \(state.rawValue)",
             severity: severity,
@@ -281,6 +291,7 @@ private extension RulesEngine {
     }
 
     func systemFinding(
+        kind: FindingKind,
         idKey: String,
         title: String,
         severity: Severity,
@@ -300,13 +311,15 @@ private extension RulesEngine {
                 evidence: evidence,
                 limitations: limitations,
                 affectedProcesses: [],
-                recommendedActions: [.openActivityMonitor, .copyReport]
+                recommendedActions: [.openActivityMonitor, .copyReport],
+                kind: kind
             ),
             impact: impact
         )
     }
 
     func processInfoFinding(
+        kind: FindingKind,
         process: ProcessSample,
         idKey: String,
         title: String,
@@ -325,7 +338,8 @@ private extension RulesEngine {
                 evidence: [evidence],
                 limitations: limitations,
                 affectedProcesses: [process.identity],
-                recommendedActions: [.inspect(process.identity), .openActivityMonitor, .copyReport]
+                recommendedActions: [.inspect(process.identity), .openActivityMonitor, .copyReport],
+                kind: kind
             ),
             impact: impact
         )

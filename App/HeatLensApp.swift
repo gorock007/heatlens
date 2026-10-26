@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct HeatLensApp: App {
-    @State private var model = ScanModel(service: FixtureScanService())
+    @State private var model = ScanModel(service: PipelineScanService())
 
     var body: some Scene {
         MenuBarExtra("HeatLens", systemImage: "thermometer.medium") {

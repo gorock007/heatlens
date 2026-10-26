@@ -70,9 +70,15 @@ struct ResultsView: View {
         .frame(height: 440)
 
         HStack {
+            Button("Copy report") { Pasteboard.copy(report.reportText) }
+                .help("Concise redacted summary: top processes and findings")
+            Button("Copy JSON") { Pasteboard.copy(report.reportJSON) }
+                .help("Full redacted report with every process")
+        }
+
+        HStack {
             Button("Done", action: onDone)
             Spacer()
-            Button("Copy report") { Pasteboard.copy(report.reportText) }
             Button("Scan again", action: onScanAgain)
                 .keyboardShortcut(.defaultAction)
         }
@@ -165,11 +171,7 @@ private struct GroupRow: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(sample?.name ?? "Process") · PID \(identity.pid)")
                             .font(.caption.weight(.medium))
-                        Text([
-                            Format.cpu(sample?.cpuPercentOfOneCore),
-                            Format.bytes(sample?.footprintBytes ?? sample?.residentBytes),
-                            "up \(context.uptime(identity))",
-                        ].joined(separator: " · "))
+                        Text("\(Format.measurement(sample)) · up \(context.uptime(identity))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }

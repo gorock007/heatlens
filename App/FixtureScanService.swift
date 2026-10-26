@@ -1,8 +1,8 @@
 import Foundation
 import HeatLensCore
 
-/// Synthetic scan modelled on PRD §7, for building the popover before the real coordinator
-/// lands. Every path, PID and name here is invented; nothing is read from this Mac.
+/// Synthetic scan modelled on PRD §7, for SwiftUI previews only (the app runs
+/// `PipelineScanService`). Every path, PID and name here is invented; nothing is read from this Mac.
 struct FixtureScanService: ScanService {
     func run(duration: TimeInterval, progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> ScanReport {
         let startedAt = Date()
@@ -18,8 +18,7 @@ struct FixtureScanService: ScanService {
         let fixture = Fixture(now: startedAt)
         let snapshot = ScanSnapshot(startedAt: startedAt, interval: interval, system: fixture.system,
                                     processes: fixture.processes, notices: fixture.notices)
-        return ScanReport(snapshot: snapshot, groups: fixture.groups, findings: fixture.findings,
-                          reportText: fixture.reportText(interval: interval))
+        return ScanReport(ScanResult(snapshot: snapshot, groups: fixture.groups, findings: fixture.findings))
     }
 }
 
@@ -161,7 +160,8 @@ private struct Fixture {
                 ],
                 affectedProcesses: [opencode.identity, opencodeWorker.identity],
                 recommendedActions: [.inspect(opencode.identity), .openProject(path: "~/Projects/jarvis-demo"),
-                                     .copyCommand(opencode.identity), .openActivityMonitor, .requestStop(opencode.identity)]),
+                                     .copyCommand(opencode.identity), .openActivityMonitor, .requestStop(opencode.identity)],
+                kind: .highCPU),
             DiagnosticFinding(
                 title: "Swap in use",
                 severity: .info, confidence: .high,
@@ -173,7 +173,8 @@ private struct Fixture {
                 ],
                 limitations: ["Swap stays allocated after the pressure that caused it has passed."],
                 affectedProcesses: [],
-                recommendedActions: [.openActivityMonitor, .copyReport]),
+                recommendedActions: [.openActivityMonitor, .copyReport],
+                kind: .swapInUse),
             DiagnosticFinding(
                 title: "Possible leftover development worker",
                 severity: .review, confidence: .medium,
@@ -189,7 +190,8 @@ private struct Fixture {
                 limitations: ["This does not prove it is unused."],
                 affectedProcesses: [worker.identity],
                 recommendedActions: [.inspect(worker.identity), .openProject(path: "~/Projects/demo-site"),
-                                     .copyCommand(worker.identity), .requestStop(worker.identity)]),
+                                     .copyCommand(worker.identity), .requestStop(worker.identity)],
+                kind: .detachedWorker),
             DiagnosticFinding(
                 title: "Long-running dev server",
                 severity: .review, confidence: .medium,
@@ -202,25 +204,8 @@ private struct Fixture {
                 limitations: ["You may still be using this server in a browser tab."],
                 affectedProcesses: [npm.identity, nextDev.identity, nextServer.identity],
                 recommendedActions: [.inspect(npm.identity), .openProject(path: "~/Projects/portfolio-demo"),
-                                     .copyCommand(nextDev.identity), .requestStop(npm.identity)]),
+                                     .copyCommand(nextDev.identity), .requestStop(npm.identity)],
+                kind: .staleDevServer),
         ]
-    }
-
-    func reportText(interval: TimeInterval) -> String {
-        var lines = [
-            "HeatLens report · \(Int(interval))-second sample (fixture data)",
-            "Thermal state: Unavailable",
-            "CPU load: 3.2 of 11 cores busy",
-            "Memory pressure: Normal · Swap: 8.5 GB of 10 GB used",
-            "",
-            "Findings:",
-        ]
-        for finding in findings {
-            lines.append("- [\(finding.severity.rawValue)] \(finding.title): \(finding.explanation)")
-        }
-        lines.append("")
-        lines.append("Notices:")
-        lines.append(contentsOf: notices.map { "- \($0)" })
-        return lines.joined(separator: "\n")
     }
 }

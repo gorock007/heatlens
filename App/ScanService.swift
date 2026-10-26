@@ -7,12 +7,32 @@ struct ScanReport: Sendable {
     let groups: [ProcessGroup]
     /// Ranked: the array order is the display order.
     let findings: [DiagnosticFinding]
-    /// Plain-text export, already redacted by the service.
+    /// Concise plain-text export (FR-11), already redacted by the service.
     let reportText: String
+    /// Full JSON export with every process, already redacted by the service.
+    let reportJSON: String
+
+    init(snapshot: ScanSnapshot, groups: [ProcessGroup], findings: [DiagnosticFinding],
+         reportText: String, reportJSON: String) {
+        self.snapshot = snapshot
+        self.groups = groups
+        self.findings = findings
+        self.reportText = reportText
+        self.reportJSON = reportJSON
+    }
+
+    /// Builds both redacted exports with `Redactor`, the same text `heatlens-probe --report` prints.
+    init(_ result: ScanResult) {
+        let json = (try? Redactor.jsonReport(result.snapshot, groups: result.groups, findings: result.findings))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        self.init(snapshot: result.snapshot, groups: result.groups, findings: result.findings,
+                  reportText: Redactor.textReport(result.snapshot, groups: result.groups, findings: result.findings),
+                  reportJSON: json)
+    }
 }
 
-/// Runs one bounded scan. The Phase 1 wiring brief swaps `FixtureScanService` for the real
-/// coordinator; the popover only knows this protocol.
+/// Runs one bounded scan. The app uses `PipelineScanService`; `FixtureScanService` is for
+/// SwiftUI previews only. The popover only knows this protocol.
 protocol ScanService: Sendable {
     /// Samples for `duration` seconds, calling `progress` with elapsed seconds as it goes.
     /// Throws `CancellationError` when the calling task is cancelled.

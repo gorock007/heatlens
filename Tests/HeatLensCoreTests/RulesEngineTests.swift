@@ -100,6 +100,25 @@ struct RulesEngineTests {
         })
     }
 
+    @Test("Every finding carries the kind of rule that produced it")
+    func findingKinds() {
+        func kinds(_ snapshot: ScanSnapshot) -> Set<FindingKind?> { Set(evaluate(snapshot).map(\.kind)) }
+        #expect(kinds(SyntheticSnapshots.multiCore).contains(.highCPU))
+        #expect(kinds(SyntheticSnapshots.oldNextServer).contains(.staleDevServer))
+        #expect(kinds(SyntheticSnapshots.detachedWorker).contains(.detachedWorker))
+        #expect(kinds(SyntheticSnapshots.snapshot([], pressure: .warning)) == [.memoryPressure])
+        #expect(kinds(SyntheticSnapshots.snapshot([], pressure: .normal, swapUsedBytes: 8 << 30)) == [.swapInUse])
+        #expect(kinds(SyntheticSnapshots.snapshot([], thermal: .serious)) == [.thermal])
+        let signals = SyntheticSnapshots.snapshot([
+            SyntheticSnapshots.process(pid: 900, owner: .root, name: "WindowServer", cpu: 31),
+            SyntheticSnapshots.process(pid: 0, owner: .root, name: "kernel_task", cpu: 51),
+        ])
+        #expect(kinds(signals).isSuperset(of: [.uiHeavy, .kernelTask]))
+        let all = [SyntheticSnapshots.activeWork, SyntheticSnapshots.detachedWorker, SyntheticSnapshots.oldNextServer,
+                   SyntheticSnapshots.hotVitestAndIdleWorker, SyntheticSnapshots.multiCore, signals]
+        #expect(all.flatMap(evaluate).allSatisfy { $0.kind != nil })
+    }
+
     @Test("Evaluation is deterministic including finding IDs")
     func deterministic() {
         let snapshot = SyntheticSnapshots.hotVitestAndIdleWorker

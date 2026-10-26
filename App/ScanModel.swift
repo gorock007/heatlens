@@ -1,4 +1,5 @@
 import Foundation
+import HeatLensCore
 import Observation
 
 /// Drives the popover through idle → scanning → results. Nothing runs outside a scan:
@@ -43,8 +44,11 @@ final class ScanModel {
                 finish(.results(report), generation: current)
             } catch is CancellationError {
                 // cancel() already returned to idle.
+            } catch ScanError.alreadyRunning {
+                // FR-13: another scan owns the coordinator; drop this one quietly.
+                finish(.idle(lastScan: lastScan), generation: current)
             } catch {
-                finish(.failed(error.localizedDescription), generation: current)
+                finish(.failed(Self.message(for: error)), generation: current)
             }
         }
     }
@@ -61,6 +65,17 @@ final class ScanModel {
     func dismiss() {
         guard task == nil else { return }
         state = .idle(lastScan: lastScan)
+    }
+
+    /// Plain words for the failed state (FR-13); never a raw error dump.
+    static func message(for error: Error) -> String {
+        switch error {
+        case ScanError.invalidDuration:
+            "The scan length wasn't valid. Try again."
+        default:
+            "HeatLens couldn't read process activity on this Mac. Nothing was changed. "
+                + "(\(error.localizedDescription))"
+        }
     }
 
     private func progress(_ elapsed: TimeInterval, total: TimeInterval, generation: Int) {

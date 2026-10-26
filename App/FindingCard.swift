@@ -145,8 +145,13 @@ private struct ProcessDetail: View {
             row("Executable", sample?.executablePath ?? Format.notAccessible)
             row("Command", Format.command(sample?.arguments) ?? Format.notAccessible)
             row("Directory", sample?.currentDirectory ?? Format.notAccessible)
-            row("CPU", Format.cpu(sample?.cpuPercentOfOneCore))
-            row("Memory", Format.bytes(sample?.footprintBytes ?? sample?.residentBytes))
+            if sample?.detailAccess == .processExited {
+                row("Status", Format.exited)
+            } else {
+                row("CPU", Format.cpu(sample?.cpuPercentOfOneCore) + (sample?.measurementSource == .ps ? " (via ps)" : ""))
+                row("Memory", Format.bytes(sample?.footprintBytes ?? sample?.residentBytes)
+                    + (sample?.measurementSource == .ps ? " (via ps)" : ""))
+            }
         }
         .font(.caption)
         .padding(8)

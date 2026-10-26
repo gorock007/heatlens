@@ -1,13 +1,25 @@
 import Foundation
 
 public enum Redactor {
+    /// How many processes the concise text report lists by CPU (FR-11), on top of every process a
+    /// finding names. `jsonReport` always carries everything.
+    public static let textProcessLimit = 15
+
     public static func textReport(
         _ snapshot: ScanSnapshot,
         groups: [ProcessGroup],
         findings: [DiagnosticFinding],
-        homeDirectory: String = NSHomeDirectory()
+        homeDirectory: String = NSHomeDirectory(),
+        processLimit: Int = Redactor.textProcessLimit
     ) -> String {
         let report = makeReport(snapshot, groups: groups, findings: findings, homeDirectory: homeDirectory)
+        // Top N by CPU (unmeasured last), plus everything a finding names, highest CPU first.
+        let named = Set(findings.flatMap(\.affectedProcesses).map(\.pid))
+        let byCPU = report.processes.sorted { ($0.cpuPercent ?? -1, $1.pid) > ($1.cpuPercent ?? -1, $0.pid) }
+        let top = Set(byCPU.prefix(max(processLimit, 0)).map(\.pid))
+        let listed = byCPU.filter { top.contains($0.pid) || named.contains($0.pid) }
+        let listedPIDs = Set(listed.map(\.pid))
+        let listedGroups = report.groups.filter { !listedPIDs.isDisjoint(with: $0.memberPIDs) }
         var lines = [
             "HeatLens scan \(report.scanID.uuidString)",
             "Started: \(ISO8601DateFormatter().string(from: report.startedAt)); interval: \(String(format: "%.1f", report.interval)) s",
@@ -18,9 +30,12 @@ public enum Redactor {
         }
 
         lines.append("Groups:")
-        if report.groups.isEmpty { lines.append("- none") }
-        for group in report.groups {
+        if listedGroups.isEmpty { lines.append("- none") }
+        for group in listedGroups {
             lines.append("- \(group.label) [\(group.kind), \(group.confidence)] root PID \(group.rootPID), project: \(group.project?.directory ?? "Unknown project")")
+        }
+        if listedGroups.count < report.groups.count {
+            lines.append("\(report.groups.count - listedGroups.count) other groups omitted")
         }
 
         lines.append("Findings (ranked):")
@@ -31,11 +46,14 @@ public enum Redactor {
             lines.append("  Limitations: \(finding.limitations.joined(separator: "; "))")
         }
 
-        lines.append("Processes:")
-        if report.processes.isEmpty { lines.append("- none") }
-        for process in report.processes {
+        lines.append("Processes (top \(processLimit) by CPU, plus any named in a finding):")
+        if listed.isEmpty { lines.append("- none") }
+        for process in listed {
             let command = process.arguments?.joined(separator: " ") ?? "Unavailable"
             lines.append("- PID \(process.pid) \(process.name); CPU \(process.cpuPercent.map { String(format: "%.1f%%", $0) } ?? "Unavailable"); cwd \(process.currentDirectory ?? "Unavailable"); argv \(command)")
+        }
+        if listed.count < report.processes.count {
+            lines.append("\(report.processes.count - listed.count) other processes omitted; Copy JSON for the full list")
         }
         return lines.joined(separator: "\n") + "\n"
     }

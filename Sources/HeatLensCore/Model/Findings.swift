@@ -34,6 +34,11 @@ public enum SuggestedAction: Hashable, Codable, Sendable {
     case requestStop(ProcessIdentity)
 }
 
+/// Which rule produced a finding, so the UI doesn't have to infer it from titles or evidence.
+public enum FindingKind: String, Hashable, Codable, Sendable {
+    case highCPU, memoryPressure, swapInUse, staleDevServer, detachedWorker, uiHeavy, kernelTask, thermal
+}
+
 /// PRD §4.3 output type.
 public struct DiagnosticFinding: Identifiable, Hashable, Codable, Sendable {
     public let id: UUID
@@ -45,10 +50,12 @@ public struct DiagnosticFinding: Identifiable, Hashable, Codable, Sendable {
     public let limitations: [String]
     public let affectedProcesses: [ProcessIdentity]
     public let recommendedActions: [SuggestedAction]
+    /// nil for findings built before kinds existed (older JSON decodes without it).
+    public let kind: FindingKind?
 
     public init(id: UUID = UUID(), title: String, severity: Severity, confidence: Confidence, explanation: String,
                 evidence: [Evidence], limitations: [String], affectedProcesses: [ProcessIdentity],
-                recommendedActions: [SuggestedAction]) {
+                recommendedActions: [SuggestedAction], kind: FindingKind? = nil) {
         self.id = id
         self.title = title
         self.severity = severity
@@ -58,6 +65,7 @@ public struct DiagnosticFinding: Identifiable, Hashable, Codable, Sendable {
         self.limitations = limitations
         self.affectedProcesses = affectedProcesses
         self.recommendedActions = recommendedActions
+        self.kind = kind
     }
 }
 

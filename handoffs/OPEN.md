@@ -13,7 +13,6 @@ Usage band: amber (5h 33% used, 17:44)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-26 17:53 · claude/claude-opus-5-5 medium · term 3420ad42-0d6c-4266-9525-bf24afb03c73 · handoffs/briefs/2026-10-26-1753-p1b-wire-real-scan.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 

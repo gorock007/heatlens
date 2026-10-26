@@ -16,6 +16,17 @@ enum Format {
         return "\(shown)% CPU (of one core)"
     }
 
+    static let exited = "Exited during scan"
+
+    /// CPU and memory for one process row: "Exited during scan" when it vanished mid-scan, and a
+    /// "via ps" note when the numbers came from ps rather than libproc.
+    static func measurement(_ sample: ProcessSample?) -> String {
+        guard let sample else { return "\(notAccessible) · \(notAccessible)" }
+        if sample.detailAccess == .processExited { return exited }
+        let line = "\(cpu(sample.cpuPercentOfOneCore)) · \(bytes(sample.footprintBytes ?? sample.residentBytes))"
+        return sample.measurementSource == .ps ? line + " · via ps" : line
+    }
+
     static func bytes(_ value: UInt64?) -> String {
         guard let value else { return notAccessible }
         return ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .memory)
@@ -98,8 +109,7 @@ enum Headline {
         default: break
         }
         let cpuFinding = report.findings.contains { finding in
-            (finding.severity == .high || finding.severity == .medium)
-                && finding.evidence.contains { $0.label.localizedCaseInsensitiveContains("CPU") }
+            finding.kind == .highCPU && (finding.severity == .high || finding.severity == .medium)
         }
         if system.hostBusyFraction >= 0.6 || cpuFinding { return "High load observed" }
         return "No significant issue observed"
