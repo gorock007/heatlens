@@ -50,6 +50,10 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
 2. About 1.2 s of CPU per scan is spent in total across the whole scan, spread over the sample
    interval. That is under 25% of one core on average.
 3. The probe's footprint is not the app's. The app adds SwiftUI and AppKit.
+4. `swift run` adds SwiftPM's own start-up to these figures. Timing the built binary directly
+   (`/usr/bin/time -l .build/arm64-apple-macosx/release/heatlens-probe --report --no-fixtures`,
+   two runs) gave 6.02–6.04 s wall, 0.96 s user + 0.07–0.08 s system CPU, 21 MB max RSS and
+   13.5 MB peak footprint: about 1.0 s of CPU per 5 s scan.
 
 ## 3. Snapshot cost
 
