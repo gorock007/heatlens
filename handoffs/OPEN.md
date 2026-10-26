@@ -13,7 +13,6 @@ Usage band: amber (5h 57% used, 19:16)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-26 19:16 · claude/claude-opus-5-5 high · term 84f8c803-bf43-4a48-a915-bc0d8d97ff1e · handoffs/briefs/2026-10-26-1823-p2c-security-review-safe-stop.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
@@ -23,7 +22,7 @@ Usage band: amber (5h 57% used, 19:16)
 ## To-do
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
 - 2a (fe859d1) + 2b (55e55d6) merged. 2c security review + Safety fixture-hang fix: moved to claude opus high (Codex unavailable, see below). Its findings → a fix brief.
-- CODEX: 5h limit exhausted, resets 22:38 on 2026-10-26. gpt-6.1-sol / gpt-6-* are model_not_found on this ChatGPT-plan account; gpt-5.6-sol works; gpt-6-astra untested. Until 22:38 no Codex routing (astra click-through waits).
+- CODEX: 5h limit exhausted, resets 22:38 on 2026-10-26. gpt-6.1-sol is model_not_found on this ChatGPT-plan account; gpt-5.6-sol works; gpt-6-astra untested. Until 22:38 no Codex routing (astra click-through waits).
 - Then: codex gpt-6-astra click-through of the popover (computer use): scan, cancel, detail, settings, confirm dialog → Cancel only (never send SIGTERM to a real process).
 - Then: FR-12 perf profiling (idle after a real scan, scan cost), PRD §9 scenario sweep, sample reports (redacted, synthetic) per PRD §10.
 - Jarvis/user only: real signing + notarization. Remote: github.com/gorock007/heatlens (PUBLIC); branch tracks origin/main, push.default=upstream, commits use the noreply email.

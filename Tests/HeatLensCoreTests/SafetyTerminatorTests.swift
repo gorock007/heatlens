@@ -7,12 +7,15 @@ import Testing
 /// only through `ProcessTerminator` or Foundation's `terminate()` on our own `Process`.
 /// Stdin is a pipe: the `read`-based children exit when it closes, so `stop()` needs no signal,
 /// and a crashed test run closes the pipe too.
+///
+/// Every wait here has a deadline. `Process.waitUntilExit()` is never used: called from a test's
+/// cooperative thread it can miss the exit and block forever after the child is already reaped.
 final class FixtureChild {
     let process: Process
     let identity: ProcessIdentity
     private let stdin = Pipe()
 
-    /// `waitForReadyLine`: wait for the child to print a line first (e.g. after it installs a trap).
+    /// `waitForReadyLine`: wait (up to 5 s) for the child to print a line first, e.g. after it installs a trap.
     init(_ executable: String, _ arguments: [String], waitForReadyLine: Bool = false) throws {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: executable)
@@ -23,20 +26,16 @@ final class FixtureChild {
         p.standardError = FileHandle.nullDevice
         try p.run()
         process = p
-        if waitForReadyLine {
-            var acc = Data()
-            while !acc.contains(10) {
-                let d = stdout.fileHandleForReading.availableData
-                if d.isEmpty { break }
-                acc.append(d)
-            }
-        }
         guard let identity = LibprocProcessSampler.identity(of: p.processIdentifier) else {
             try? stdin.fileHandleForWriting.close()
-            p.waitUntilExit()
+            _ = Self.waitWhileRunning(p, timeout: 2)
             throw FixtureError.noIdentity
         }
         self.identity = identity
+        if waitForReadyLine, !Self.readLine(from: stdout.fileHandleForReading, timeout: 5) {
+            stop()
+            throw FixtureError.notReady
+        }
     }
 
     /// `/bin/sh` that ignores SIGTERM and exits when stdin closes.
@@ -52,18 +51,45 @@ final class FixtureChild {
     var isAlive: Bool { LibprocProcessSampler.identity(of: identity.pid) == identity && process.isRunning }
 
     /// Closes stdin; if the child is still around after that (e.g. `sleep`), SIGTERMs our own
-    /// child through Foundation. Waits for it to be reaped.
+    /// child through Foundation. Returns whether it is gone from the kernel's process list
+    /// within about 3 s; never blocks longer.
     @discardableResult
     func stop() -> Bool {
         try? stdin.fileHandleForWriting.close()
-        let deadline = Date().addingTimeInterval(1)
-        while process.isRunning, Date() < deadline { usleep(10_000) }
-        if process.isRunning { process.terminate() }
-        process.waitUntilExit()
-        return waitUntilGone(identity)
+        if waitUntilGone(identity, timeout: 1) { return true }
+        // Still this exact instance (a zombie can't be replaced), so the signal can only reach our child.
+        if process.isRunning, LibprocProcessSampler.identity(of: identity.pid) == identity { process.terminate() }
+        return waitUntilGone(identity, timeout: 2)
     }
 
-    enum FixtureError: Error { case noIdentity }
+    /// Polls `isRunning` until it is false or `timeout` passes.
+    private static func waitWhileRunning(_ process: Process, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning {
+            if Date() >= deadline { return false }
+            usleep(10_000)
+        }
+        return true
+    }
+
+    /// Reads until a newline, EOF or `timeout`; true only when a newline arrived in time.
+    private static func readLine(from handle: FileHandle, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        var buffer = [UInt8](repeating: 0, count: 256)
+        while true {
+            let remaining = deadline.timeIntervalSinceNow
+            if remaining <= 0 { return false }
+            var pfd = pollfd(fd: handle.fileDescriptor, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&pfd, 1, Int32(min(remaining * 1_000, 1_000).rounded(.up)))
+            if ready < 0, errno != EINTR { return false }
+            if ready <= 0 { continue }
+            let count = read(handle.fileDescriptor, &buffer, buffer.count)
+            if count <= 0 { return false }
+            if buffer[..<count].contains(10) { return true }
+        }
+    }
+
+    enum FixtureError: Error { case noIdentity, notReady }
 }
 
 private func liveSample(_ child: FixtureChild) throws -> ProcessSample {
