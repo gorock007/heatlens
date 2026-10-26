@@ -6,13 +6,14 @@ rebuild "what's pending" by searching the handoff folders. Before Jarvis
 stops, this file must hold everything a fresh session needs: `jarvis watch`
 may `/clear` Jarvis after a long idle.
 
-Jarvis session: <terminal id — `handoffs/bin/jarvis start` writes it>
-Usage band: <green | amber | red> — `handoffs/bin/jarvis status` writes it from the statusline reading
+Jarvis session: cf788b09-038c-480c-b260-e01e536edeef
+Usage band: green (5h 11% used, 17:09)
 
 ## Questions for the user
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
+- 2026-10-26 17:09 · claude/fable high · term 97400f86-99a1-4ad5-a4fb-15a06dfc1e5b · handoffs/briefs/2026-10-26-1708-phase0a-feasibility-probe.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
@@ -20,4 +21,8 @@ Usage band: <green | amber | red> — `handoffs/bin/jarvis status` writes it fro
 <!-- - handoff to review: handoffs/<file>.md · migration to apply · release to cut -->
 
 ## To-do
-<!-- - next things to brief, in order; briefs queued behind the Claude cap go here -->
+- Phase 1 (after 0a + 0b merge): split per 0a's "Phase 1 proposal" into 2–4 disjoint briefs. Likely: samplers (Process/System) · ProvenanceResolver + fixtures · RulesEngine + findings tests · popover UI wired to ScanCoordinator (scan/cancel/results/export). Engine briefs claude-opus-5-5 high; UI opus high.
+- After Phase 1: add the app build (`scripts/run-app.sh --build-only`) to the Checks line in CLAUDE.md + AGENTS.md.
+- Phase 2: safe stop (FR-09: SIGTERM, PID/start-time revalidation, denylist) on fable, plus a gpt-5.6-sol security review of it. Detail screen, exclusions/settings, optional history. Perf profiling (FR-12).
+- Phase 2 end-to-end click-through of the popover: codex gpt-6-astra (computer use).
+- Jarvis/user only: real signing + notarization; no git remote yet (JARVIS_PUSH=0). Ask the user if they want a GitHub repo.
