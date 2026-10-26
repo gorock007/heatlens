@@ -78,6 +78,25 @@ enum Format {
         }
     }
 
+    static func owner(_ owner: ProcessOwner?) -> String {
+        switch owner {
+        case .currentUser: "Current user"
+        case .root: "root"
+        case .otherUser: "Another user"
+        case .unknown: "Unknown"
+        case nil: notAccessible
+        }
+    }
+
+    static func impact(_ percent: Double?) -> String {
+        guard let percent else { return "CPU impact was not accessible in this sample." }
+        let shown = percent < 10 ? String(format: "%.1f", percent) : String(format: "%.0f", percent)
+        if percent < 5 {
+            return "\(shown)% CPU in this sample — stopping it is unlikely to cool your Mac."
+        }
+        return "\(shown)% CPU in this sample."
+    }
+
     /// Shell-style command line from argv; nil when argv is not accessible.
     static func command(_ arguments: [String]?) -> String? {
         guard let arguments, !arguments.isEmpty else { return nil }

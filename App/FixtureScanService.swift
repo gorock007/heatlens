@@ -160,7 +160,7 @@ private struct Fixture {
                 ],
                 affectedProcesses: [opencode.identity, opencodeWorker.identity],
                 recommendedActions: [.inspect(opencode.identity), .openProject(path: "~/Projects/jarvis-demo"),
-                                     .copyCommand(opencode.identity), .openActivityMonitor, .requestStop(opencode.identity)],
+                                     .copyCommand(opencode.identity), .openActivityMonitor],
                 kind: .highCPU),
             DiagnosticFinding(
                 title: "Swap in use",

@@ -14,7 +14,6 @@ Usage band: amber (5h 33% used, 17:44)
 
 ## Running workers
 - 2026-10-26 18:02 · codex/gpt-5.6-sol high · term ddf28a91-fb52-42a4-b89d-8ec6dfd78a6e · handoffs/briefs/2026-10-26-1803-p1c-provenance-quality.md
-- 2026-10-26 18:02 · codex/gpt-5.6-sol high · term 118133ad-be70-4fcd-a947-bdfba07cc3de · handoffs/briefs/2026-10-26-1803-p2b-detail-stop-settings-ui.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 

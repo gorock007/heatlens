@@ -19,18 +19,21 @@ final class ScanModel {
     private(set) var lastScan: Date?
 
     private let service: any ScanService
+    let settings: SettingsModel
     private var task: Task<Void, Never>?
     /// Bumped per scan so progress or results from a cancelled scan are dropped.
     private var generation = 0
 
-    init(service: any ScanService) {
+    init(service: any ScanService, settings: SettingsModel = SettingsModel()) {
         self.service = service
+        self.settings = settings
     }
 
     var isScanning: Bool { task != nil }
 
-    func startScan(duration: TimeInterval = ScanModel.defaultDuration) {
+    func startScan(duration: TimeInterval? = nil) {
         guard task == nil else { return }
+        let duration = duration ?? settings.sampleDuration
         generation += 1
         let current = generation
         let service = self.service

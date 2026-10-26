@@ -2,13 +2,15 @@ import SwiftUI
 import HeatLensCore
 
 /// One finding (PRD §3 "Result card example"): what was seen, why, how sure, what it can't
-/// prove, and the safe actions. `requestStop` is never rendered; stopping arrives in Phase 2.
+/// prove, and the safe actions.
 struct FindingCard: View {
     let finding: DiagnosticFinding
     let context: ReportContext
+    let stopService: any ProcessStopping
+    let onInspect: (ProcessIdentity) -> Void
+    let onRequestStop: (StopTarget) -> Void
 
     @State private var showEvidence = false
-    @State private var inspecting = false
     @State private var copiedCommand = false
 
     var body: some View {
@@ -50,10 +52,6 @@ struct FindingCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if inspecting {
-                ForEach(finding.affectedProcesses, id: \.self) { ProcessDetail(identity: $0, context: context) }
-            }
-
             FlowLayout(spacing: 6) {
                 ForEach(Array(visibleActions.enumerated()), id: \.offset) { _, action in
                     actionButton(action)
@@ -77,7 +75,11 @@ struct FindingCard: View {
 
     private var visibleActions: [SuggestedAction] {
         finding.recommendedActions.filter {
-            if case .requestStop = $0 { return false }
+            if case .requestStop(let identity) = $0 {
+                guard let process = context.processes[identity] else { return false }
+                if case .eligible = stopService.eligibility(of: process) { return true }
+                return false
+            }
             return true
         }
     }
@@ -85,14 +87,13 @@ struct FindingCard: View {
     @ViewBuilder
     private func actionButton(_ action: SuggestedAction) -> some View {
         switch action {
-        case .inspect:
-            Button(inspecting ? "Hide details" : "Inspect details") { inspecting.toggle() }
+        case .inspect(let identity):
+            Button("Inspect details") { onInspect(identity) }
         case .openProject(let path):
-            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
-            let exists = FileManager.default.fileExists(atPath: url.path)
-            Button("Open project") { NSWorkspace.shared.open(url) }
+            let exists = projectExists(path)
+            Button("Open project") { openProject(path) }
                 .disabled(!exists)
-                .help(exists ? url.path : "Folder not found: \(path)")
+                .help(exists ? path : "Folder not found: \(path)")
         case .copyCommand(let identity):
             let command = Format.command(context.processes[identity]?.arguments)
             Button(copiedCommand ? "Copied" : "Copy command") {
@@ -104,15 +105,15 @@ struct FindingCard: View {
             .disabled(command == nil)
             .help(command == nil ? "Command line not accessible" : "Copy the command line")
         case .openActivityMonitor:
-            Button("Activity Monitor") {
-                if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ActivityMonitor") {
-                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-                }
-            }
+            Button("Activity Monitor", action: openActivityMonitor)
         case .copyReport:
             Button("Copy report") { Pasteboard.copy(context.report.reportText) }
-        case .requestStop:
-            EmptyView()
+        case .requestStop(let identity):
+            if let process = context.processes[identity] {
+                Button("Request stop", role: .destructive) {
+                    onRequestStop(StopTarget(identity: identity, process: process, project: context.project(for: identity)))
+                }
+            }
         }
     }
 }
@@ -128,45 +129,6 @@ private struct Chip: View {
             .padding(.vertical, 2)
             .foregroundStyle(tint)
             .background(tint.opacity(0.15), in: Capsule())
-    }
-}
-
-/// FR-04 details for one affected process, each field "Not accessible" when unreadable.
-private struct ProcessDetail: View {
-    let identity: ProcessIdentity
-    let context: ReportContext
-
-    var body: some View {
-        let sample = context.processes[identity]
-        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 2) {
-            row("PID", "\(identity.pid)")
-            row("Parent", sample.map { $0.isAdoptedByLaunchd ? "launchd (PPID 1)" : "PPID \($0.parentPID)" } ?? Format.notAccessible)
-            row("Uptime", context.uptime(identity))
-            row("Executable", sample?.executablePath ?? Format.notAccessible)
-            row("Command", Format.command(sample?.arguments) ?? Format.notAccessible)
-            row("Directory", sample?.currentDirectory ?? Format.notAccessible)
-            if sample?.detailAccess == .processExited {
-                row("Status", Format.exited)
-            } else {
-                row("CPU", Format.cpu(sample?.cpuPercentOfOneCore) + (sample?.measurementSource == .ps ? " (via ps)" : ""))
-                row("Memory", Format.bytes(sample?.footprintBytes ?? sample?.residentBytes)
-                    + (sample?.measurementSource == .ps ? " (via ps)" : ""))
-            }
-        }
-        .font(.caption)
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        GridRow(alignment: .firstTextBaseline) {
-            Text(label).foregroundStyle(.secondary)
-            Text(value)
-                .textSelection(.enabled)
-                .lineLimit(3)
-                .truncationMode(.middle)
-        }
     }
 }
 

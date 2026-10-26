@@ -4,18 +4,29 @@ import SwiftUI
 /// happens inside a scan the user started.
 struct PopoverView: View {
     let model: ScanModel
+    let stopService: any ProcessStopping
+    @State private var showingSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            switch model.state {
-            case .idle(let lastScan):
-                IdleView(lastScan: lastScan) { model.startScan() }
-            case .scanning(let elapsed, let total):
-                ScanningView(elapsed: elapsed, total: total) { model.cancel() }
-            case .results(let report):
-                ResultsView(report: report, onScanAgain: { model.startScan() }, onDone: { model.dismiss() })
-            case .failed(let message):
-                FailedView(message: message, onRetry: { model.startScan() }, onDone: { model.dismiss() })
+            Header(showingSettings: showingSettings, settingsDisabled: model.isScanning) {
+                showingSettings.toggle()
+            }
+
+            if showingSettings {
+                SettingsView(settings: model.settings) { showingSettings = false }
+            } else {
+                switch model.state {
+                case .idle(let lastScan):
+                    IdleView(lastScan: lastScan) { model.startScan() }
+                case .scanning(let elapsed, let total):
+                    ScanningView(elapsed: elapsed, total: total) { model.cancel() }
+                case .results(let report):
+                    ResultsView(report: report, settings: model.settings, stopService: stopService,
+                                onScanAgain: { model.startScan() }, onDone: { model.dismiss() })
+                case .failed(let message):
+                    FailedView(message: message, onRetry: { model.startScan() }, onDone: { model.dismiss() })
+                }
             }
 
             Divider()
@@ -34,18 +45,21 @@ struct PopoverView: View {
 }
 
 private struct Header: View {
-    var trailing: String?
+    let showingSettings: Bool
+    let settingsDisabled: Bool
+    let onSettings: () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("HeatLens")
                 .font(.headline)
             Spacer()
-            if let trailing {
-                Text(trailing)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            Button(showingSettings ? "Close settings" : "Settings", systemImage: showingSettings ? "xmark" : "gearshape",
+                   action: onSettings)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .disabled(settingsDisabled)
+                .help(showingSettings ? "Close settings" : "Settings")
         }
     }
 }
@@ -55,16 +69,9 @@ private struct IdleView: View {
     let onScan: () -> Void
 
     var body: some View {
-        Group {
-            if let lastScan {
-                // Re-evaluated only while the popover is on screen.
-                TimelineView(.everyMinute) { context in
-                    Header(trailing: "Last scan: \(Format.relative(lastScan, now: context.date))")
-                }
-            } else {
-                Header(trailing: "Last scan: never")
-            }
-        }
+        Text(lastScan.map { "Last scan: \(Format.relative($0))" } ?? "Last scan: never")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
 
         Button(action: onScan) {
             Text("Scan now")
@@ -86,8 +93,6 @@ private struct ScanningView: View {
     let onCancel: () -> Void
 
     var body: some View {
-        Header()
-
         Text("Measuring process activity (\(Int(elapsed)) of \(Int(total)) seconds)")
             .font(.callout)
 
@@ -107,8 +112,6 @@ private struct FailedView: View {
     let onDone: () -> Void
 
     var body: some View {
-        Header()
-
         Label("The scan didn't finish", systemImage: "exclamationmark.triangle")
             .font(.callout.weight(.semibold))
         Text(message)
@@ -126,5 +129,5 @@ private struct FailedView: View {
 }
 
 #Preview("Idle") {
-    PopoverView(model: ScanModel(service: FixtureScanService()))
+    PopoverView(model: ScanModel(service: FixtureScanService()), stopService: FixtureStopService())
 }
