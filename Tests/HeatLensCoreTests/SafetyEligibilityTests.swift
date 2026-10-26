@@ -22,8 +22,6 @@ struct SafetyEligibilityTests {
     func eligible() {
         #expect(terminator.eligibility(of: sample()) == .eligible)
         #expect(terminator.eligibility(of: sample(path: "/Users/someone/Developer/app/bin/server")) == .eligible)
-        // /bin is not on the Apple list (the fixture tests stop /bin/sleep).
-        #expect(terminator.eligibility(of: sample(name: "sleep", path: "/bin/sleep")) == .eligible)
     }
 
     @Test("pid 1 and pid 0 are denied", arguments: [Int32(1), 0])
@@ -62,6 +60,7 @@ struct SafetyEligibilityTests {
     @Test("Apple binary paths are denied", arguments: [
         "/System/Library/CoreServices/Something.app/Contents/MacOS/Something",
         "/usr/libexec/someservice", "/usr/sbin/somed", "/sbin/somed", "/usr/bin/python3",
+        "/bin/sleep", "/bin/zsh", "/bin/launchctl", "/Library/Apple/usr/bin/something",
     ])
     func applePaths(path: String) throws {
         #expect(try #require(denial(sample(name: "something", path: path))).contains("Apple system program"))

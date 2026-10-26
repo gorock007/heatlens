@@ -9,6 +9,7 @@ import HeatLensCore
 final class Fixtures {
     let lifetime = 60
     private(set) var busyShell: Process?
+    private(set) var busyShellIdentity: ProcessIdentity?
     private(set) var busyPID: pid_t?
     private(set) var busyIdentity: ProcessIdentity?
     private(set) var log: [String] = []
@@ -27,6 +28,7 @@ final class Fixtures {
             return
         }
         busyShell = p
+        busyShellIdentity = LibprocProcessSampler.identity(of: p.processIdentifier)
         if let pid = Self.readFirstPID(pipe) {
             busyPID = pid
             busyIdentity = LibprocProcessSampler.identity(of: pid)
@@ -38,9 +40,11 @@ final class Fixtures {
 
     func stopAll() {
         guard let sh = busyShell else { return }
-        if sh.isRunning {
+        // Bounded and identity-checked: no waitUntilExit(), which can miss the exit and hang,
+        // and no signal unless the kernel still lists this exact shell instance.
+        if sh.isRunning, let shell = busyShellIdentity, LibprocProcessSampler.identity(of: shell.pid) == shell {
             sh.terminate()
-            sh.waitUntilExit()
+            for _ in 0..<80 where LibprocProcessSampler.identity(of: shell.pid) == shell { usleep(25_000) }
         }
         guard let pid = busyPID, let expected = busyIdentity else { return }
         for _ in 0..<40 where LibprocProcessSampler.identity(of: pid) == expected { usleep(25_000) }

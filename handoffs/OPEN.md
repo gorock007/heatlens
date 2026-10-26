@@ -21,7 +21,7 @@ Usage band: amber (5h 57% used, 19:16)
 
 ## To-do
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
-- 2a (fe859d1) + 2b (55e55d6) merged. 2c security review + Safety fixture-hang fix: moved to claude opus high (Codex unavailable, see below). Its findings → a fix brief.
+- 2a/2b/2c merged (2c review 8009831: no high/medium; 7 low). 2d fixes running (claude opus medium). Ruling made: an exclusion also suppresses the stop offer.
 - CODEX: 5h limit exhausted, resets 22:38 on 2026-10-26. gpt-6.1-sol is model_not_found on this ChatGPT-plan account; gpt-5.6-sol works; gpt-6-astra untested. Until 22:38 no Codex routing (astra click-through waits).
 - Then: codex gpt-6-astra click-through of the popover (computer use): scan, cancel, detail, settings, confirm dialog → Cancel only (never send SIGTERM to a real process).
 - Then: FR-12 perf profiling (idle after a real scan, scan cost), PRD §9 scenario sweep, sample reports (redacted, synthetic) per PRD §10.

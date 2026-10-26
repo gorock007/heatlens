@@ -8,27 +8,58 @@ import Testing
 /// Stdin is a pipe: the `read`-based children exit when it closes, so `stop()` needs no signal,
 /// and a crashed test run closes the pipe too.
 ///
+/// `/bin` is on the Apple list, so `/bin/sleep` and `/bin/bash` children run from ad-hoc-signed
+/// copies in a per-fixture temp directory; `/usr/bin/head` still covers the Apple-path denial.
+/// (Not `/bin/sh`: it is a trampoline that re-execs the shell from `/bin`, so a copy ends up there.)
+///
 /// Every wait here has a deadline. `Process.waitUntilExit()` is never used: called from a test's
 /// cooperative thread it can miss the exit and block forever after the child is already reaped.
 final class FixtureChild {
     let process: Process
     let identity: ProcessIdentity
     private let stdin = Pipe()
+    /// The temp directory holding a copied tool, removed by `stop()`.
+    private var toolDirectory: URL?
 
     /// `waitForReadyLine`: wait (up to 5 s) for the child to print a line first, e.g. after it installs a trap.
     init(_ executable: String, _ arguments: [String], waitForReadyLine: Bool = false) throws {
+        var directory: URL?
+        if executable.hasPrefix("/bin/") {
+            let created = FileManager.default.temporaryDirectory.appendingPathComponent("heatlens-fixture-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: created, withIntermediateDirectories: true)
+            directory = created
+        }
+        // `self` isn't fully initialized on the early exits, so they clean up through this.
+        func removeDirectory() { if let directory { try? FileManager.default.removeItem(at: directory) } }
+        toolDirectory = directory
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: executable)
+        if let directory {
+            let copy = directory.appendingPathComponent(URL(fileURLWithPath: executable).lastPathComponent)
+            do {
+                try FileManager.default.copyItem(at: URL(fileURLWithPath: executable), to: copy)
+                try Self.adHocSign(copy)
+            } catch {
+                removeDirectory()
+                throw error
+            }
+            p.executableURL = copy
+        } else {
+            p.executableURL = URL(fileURLWithPath: executable)
+        }
         p.arguments = arguments
         let stdout = Pipe()
         p.standardInput = stdin
         p.standardOutput = stdout
         p.standardError = FileHandle.nullDevice
-        try p.run()
+        do { try p.run() } catch {
+            removeDirectory()
+            throw error
+        }
         process = p
         guard let identity = LibprocProcessSampler.identity(of: p.processIdentifier) else {
             try? stdin.fileHandleForWriting.close()
             _ = Self.waitWhileRunning(p, timeout: 2)
+            removeDirectory()
             throw FixtureError.noIdentity
         }
         self.identity = identity
@@ -38,14 +69,14 @@ final class FixtureChild {
         }
     }
 
-    /// `/bin/sh` that ignores SIGTERM and exits when stdin closes.
+    /// A copy of `/bin/bash` that ignores SIGTERM and exits when stdin closes.
     static func ignoringSIGTERM() throws -> FixtureChild {
-        try FixtureChild("/bin/sh", ["-c", "trap '' TERM; echo ready; read x"], waitForReadyLine: true)
+        try FixtureChild("/bin/bash", ["-c", "trap '' TERM; echo ready; read x"], waitForReadyLine: true)
     }
 
-    /// `/bin/sh` that waits on stdin; closing it is how the test makes it exit.
+    /// A copy of `/bin/bash` that waits on stdin; closing it is how the test makes it exit.
     static func waitingOnStdin() throws -> FixtureChild {
-        try FixtureChild("/bin/sh", ["-c", "echo ready; read x"], waitForReadyLine: true)
+        try FixtureChild("/bin/bash", ["-c", "echo ready; read x"], waitForReadyLine: true)
     }
 
     var isAlive: Bool { LibprocProcessSampler.identity(of: identity.pid) == identity && process.isRunning }
@@ -55,11 +86,35 @@ final class FixtureChild {
     /// within about 3 s; never blocks longer.
     @discardableResult
     func stop() -> Bool {
+        defer { removeToolDirectory() }
         try? stdin.fileHandleForWriting.close()
         if waitUntilGone(identity, timeout: 1) { return true }
         // Still this exact instance (a zombie can't be replaced), so the signal can only reach our child.
         if process.isRunning, LibprocProcessSampler.identity(of: identity.pid) == identity { process.terminate() }
         return waitUntilGone(identity, timeout: 2)
+    }
+
+    private func removeToolDirectory() {
+        if let toolDirectory { try? FileManager.default.removeItem(at: toolDirectory) }
+        toolDirectory = nil
+    }
+
+    /// macOS kills a copy of an Apple platform binary at launch unless it is re-signed; an ad-hoc
+    /// signature (no identity) is enough. `codesign` is our own child; the wait is bounded.
+    private static func adHocSign(_ binary: URL) throws {
+        let codesign = Process()
+        codesign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        codesign.arguments = ["--force", "--sign", "-", binary.path]
+        codesign.standardInput = FileHandle.nullDevice
+        codesign.standardOutput = FileHandle.nullDevice
+        codesign.standardError = FileHandle.nullDevice
+        try codesign.run()
+        guard waitWhileRunning(codesign, timeout: 10) else {
+            if codesign.isRunning { codesign.terminate() }
+            _ = waitWhileRunning(codesign, timeout: 2)
+            throw FixtureError.signingFailed
+        }
+        guard codesign.terminationStatus == 0 else { throw FixtureError.signingFailed }
     }
 
     /// Polls `isRunning` until it is false or `timeout` passes.
@@ -89,7 +144,7 @@ final class FixtureChild {
         }
     }
 
-    enum FixtureError: Error { case noIdentity, notReady }
+    enum FixtureError: Error { case noIdentity, notReady, signingFailed }
 }
 
 private func liveSample(_ child: FixtureChild) throws -> ProcessSample {
@@ -103,10 +158,11 @@ private func liveSample(_ child: FixtureChild) throws -> ProcessSample {
 struct SafetyTerminatorTests {
     let terminator = ProcessTerminator()
 
-    @Test("A sleep 60 child is eligible and stops on one SIGTERM")
+    @Test("A copied sleep 60 child is eligible and stops on one SIGTERM")
     func stopsSleep() async throws {
         let child = try FixtureChild("/bin/sleep", ["60"])
         defer { child.stop() }
+        #expect(child.process.executableURL?.path.hasPrefix("/bin/") == false)
         #expect(terminator.eligibility(of: try liveSample(child)) == .eligible)
 
         let outcome = await terminator.requestStop(child.identity, wait: 3)

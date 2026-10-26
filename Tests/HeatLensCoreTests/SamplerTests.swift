@@ -5,9 +5,11 @@ import Testing
 
 /// `yes >/dev/null` spawned by a test. The wrapping shell kills `yes` after 30 s, so a crashed
 /// test run cannot leave it behind for long, and at once on SIGTERM. `stop()` signals only
-/// that shell, our own child, by PID, then confirms the `yes` identity is gone.
+/// that shell, our own child, by PID, then confirms the `yes` identity is gone. Every wait is
+/// bounded: `waitUntilExit()` can miss the exit on a test's cooperative thread and hang.
 final class BusyFixture {
     let shell: Process
+    let shellIdentity: ProcessIdentity?
     let yesIdentity: ProcessIdentity
     var yesPID: Int32 { yesIdentity.pid }
 
@@ -22,6 +24,7 @@ final class BusyFixture {
         p.standardInput = FileHandle.nullDevice
         try p.run()
         shell = p
+        shellIdentity = LibprocProcessSampler.identity(of: p.processIdentifier)
         var acc = Data()
         while !acc.contains(10) {
             let d = pipe.fileHandleForReading.availableData
@@ -30,8 +33,7 @@ final class BusyFixture {
         }
         let line = String(decoding: acc, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard let pid = Int32(line), let identity = LibprocProcessSampler.identity(of: pid) else {
-            p.terminate()
-            p.waitUntilExit()
+            _ = terminateOwnChild(p, identity: shellIdentity)
             throw FixtureError.noPID(line)
         }
         yesIdentity = identity
@@ -40,14 +42,24 @@ final class BusyFixture {
     /// true when both the shell and `yes` are confirmed gone.
     @discardableResult
     func stop() -> Bool {
-        if shell.isRunning {
-            shell.terminate()
-            shell.waitUntilExit()
-        }
-        return waitUntilGone(yesIdentity)
+        let shellGone = terminateOwnChild(shell, identity: shellIdentity)
+        return waitUntilGone(yesIdentity) && shellGone
     }
 
     enum FixtureError: Error { case noPID(String) }
+}
+
+/// SIGTERMs `process`, a child this test spawned, only while the kernel still lists that exact
+/// instance (so a reused pid is never hit), then waits up to `timeout` for it to go.
+func terminateOwnChild(_ process: Process, identity: ProcessIdentity?, timeout: TimeInterval = 2) -> Bool {
+    guard let identity else {
+        // No identity to check against: never signal, just wait (bounded) for it to end.
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline { usleep(20_000) }
+        return !process.isRunning
+    }
+    if process.isRunning, LibprocProcessSampler.identity(of: identity.pid) == identity { process.terminate() }
+    return waitUntilGone(identity, timeout: timeout)
 }
 
 /// Polls (up to `timeout`) until no live process has this identity; never signals it.
@@ -157,6 +169,33 @@ struct SamplerLiveTests {
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(Date().timeIntervalSince(cancelledAt) < 1)
         #expect(waitUntilGone(child))
+    }
+
+    @Test("a child past its deadline is stopped and reported as a ps failure, not a hang")
+    func childDeadline() async throws {
+        let launched = Recorder<ProcessIdentity>()
+        let sampler = PSTimeSampler(executable: "/bin/sleep", arguments: ["30"], deadline: 1) { pid in
+            if let identity = LibprocProcessSampler.identity(of: pid) { launched.append(identity) }
+        }
+        let startedAt = Date()
+        do {
+            _ = try await sampler.snapshot()
+            Issue.record("a 30 s child finished inside a 1 s deadline")
+        } catch let error as ChildProcess.TimedOut {
+            #expect("\(error)" == "/bin/sleep did not finish within 1 s")
+        }
+        #expect(Date().timeIntervalSince(startedAt) < 3)
+        #expect(waitUntilGone(try #require(launched.values.first)))
+    }
+
+    @Test("a pmset run past its deadline gives no pmset data and a notice")
+    func pmsetDeadline() async throws {
+        let sampler = HostSystemSampler(readsPmset: true, pmsetCommand: ("/bin/sleep", ["30"]), pmsetDeadline: 1)
+        let startedAt = Date()
+        let state = try await sampler.state()
+        #expect(Date().timeIntervalSince(startedAt) < 3)
+        #expect(state.pmset == nil)
+        #expect(state.pmsetNotice == "pmset thermal data unavailable (/bin/sleep did not finish within 1 s).")
     }
 
     @Test("an already-cancelled task never launches the child")

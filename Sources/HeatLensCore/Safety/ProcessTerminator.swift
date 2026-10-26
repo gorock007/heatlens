@@ -40,7 +40,7 @@ public struct ProcessTerminator: Sendable {
     /// `mds`, `mds_stores` and the rest of Spotlight's metadata server family.
     static let protectedNamePrefixes = ["mds"]
     /// Apple binaries live here; HeatLens never stops them.
-    static let appleDirectories = ["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/usr/bin/"]
+    static let appleDirectories = ["/System/", "/Library/Apple/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/usr/bin/", "/bin/"]
 
     /// Delay between exit checks after the signal.
     static let pollInterval: Duration = .milliseconds(50)

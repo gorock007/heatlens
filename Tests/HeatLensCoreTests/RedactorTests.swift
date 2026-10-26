@@ -98,4 +98,87 @@ struct RedactorTests {
                                        homeDirectory: SyntheticSnapshots.home)
         #expect(!text.contains("omitted"))
     }
+
+    private func reports(_ snapshot: ScanSnapshot, findings: [DiagnosticFinding], home: String = SyntheticSnapshots.home) throws -> [String] {
+        let groups = ProvenanceResolver.resolve(snapshot)
+        let text = Redactor.textReport(snapshot, groups: groups, findings: findings, homeDirectory: home)
+        let json = try Redactor.jsonReport(snapshot, groups: groups, findings: findings, homeDirectory: home)
+        return [text, try #require(String(data: json, encoding: .utf8))]
+    }
+
+    @Test("A node script label exports as `node <script>` in groups, titles, explanations and evidence")
+    func scriptLabel() throws {
+        let home = SyntheticSnapshots.home
+        let process = SyntheticSnapshots.process(
+            pid: 1_100, name: "node", executablePath: "/usr/local/bin/node",
+            arguments: ["node", home + "/clients/acme-merger/sync-ghp_FAKETOKEN123.js"],
+            currentDirectory: home + "/clients/acme-merger", cpu: 95
+        )
+        let snapshot = SyntheticSnapshots.snapshot([process])
+        let group = try #require(ProvenanceResolver.resolve(snapshot).first { $0.root == process.identity })
+        #expect(group.kind == "node script")
+        #expect(group.label == "node sync-ghp_FAKETOKEN123.js")   // the app keeps the real label
+        let finding = DiagnosticFinding(
+            title: "Sustained high CPU: \(group.label)", severity: .high, confidence: .medium,
+            explanation: "\(group.label) used 95% of a core.",
+            evidence: [Evidence(label: "Group", value: group.label, source: "provenance")],
+            limitations: [], affectedProcesses: [process.identity], recommendedActions: [.requestStop(process.identity)]
+        )
+        for report in try reports(snapshot, findings: [finding]) {
+            #expect(!report.contains("FAKETOKEN123"))
+            #expect(!report.contains("sync-"))
+            #expect(report.contains("Sustained high CPU: node <script>"))
+            #expect(report.contains("node <script> used 95% of a core."))
+        }
+    }
+
+    @Test("Credential-looking path components and secret options are redacted; ordinary text survives")
+    func secretsInPathsAndText() throws {
+        let home = SyntheticSnapshots.home
+        let secretDirectory = home + "/clients/acme-merger/ghp_FAKETOKEN456"
+        let process = SyntheticSnapshots.process(
+            pid: 1_200, name: "vite", executablePath: "/usr/local/bin/node",
+            arguments: ["node", "vite"], currentDirectory: secretDirectory, cpu: 40
+        )
+        let snapshot = SyntheticSnapshots.snapshot([process], notices: [
+            "run --auth-token=FAKEAUTH1 now",
+            "env API_TOKEN=FAKEENV2 set",
+            "mysql --ask-password -p FAKEPW3",
+            "vite -p 3000 in ~/Developer/task-runner",
+            "keys AKIAFAKEFAKEFAKE1234 xoxb-FAKE-SLACK sk-FAKEFAKEFAKEFAKE0000 at /tmp/0123456789abcdef0123456789abcdef/x",
+            "blob ~/cache/QmFzZTY0RmFrZVNlY3JldEZvclRlc3RpbmdPbmx5/y",
+            "long ~/Developer/my-long-project-name-that-is-quite-long/z",
+        ])
+        let finding = DiagnosticFinding(
+            title: "Review vite", severity: .review, confidence: .medium, explanation: "Runs in " + secretDirectory,
+            evidence: [Evidence(label: "Project", value: secretDirectory, source: "cwd")],
+            limitations: [], affectedProcesses: [process.identity],
+            recommendedActions: [.openProject(path: secretDirectory)]
+        )
+        for report in try reports(snapshot, findings: [finding]) {
+            for leaked in ["FAKETOKEN456", "FAKEAUTH1", "FAKEENV2", "FAKEPW3", "AKIAFAKE", "xoxb-", "sk-FAKE",
+                           "0123456789abcdef0123456789abcdef", "QmFzZTY0"] {
+                #expect(!report.contains(leaked), "\(leaked) leaked")
+            }
+            #expect(report.contains("~/clients/acme-merger/<redacted>"))
+            #expect(report.contains("vite -p 3000 in ~/Developer/task-runner"))
+            #expect(report.contains("~/Developer/my-long-project-name-that-is-quite-long/z"))
+        }
+    }
+
+    @Test("The username is replaced only as a whole word or path component")
+    func usernameWholeWord() throws {
+        let home = "/Users/al"
+        let process = SyntheticSnapshots.process(
+            pid: 1_300, name: "node", executablePath: "/usr/local/bin/node",
+            arguments: ["/usr/local/bin/node"], currentDirectory: home + "/Developer/app", cpu: 10
+        )
+        let snapshot = SyntheticSnapshots.snapshot([process], notices: ["al started a scan; Al's Mac; final"])
+        for report in try reports(snapshot, findings: [], home: home) {
+            #expect(report.contains("/usr/local/bin/node"))
+            #expect(!report.contains("loc<user>"))
+            #expect(report.contains("~/Developer/app"))
+            #expect(report.contains("<user> started a scan; <user>'s Mac; final"))
+        }
+    }
 }

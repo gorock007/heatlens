@@ -132,7 +132,11 @@ struct ProcessDetailView: View {
                         .disabled(!projectExists(project.directory))
                 }
                 Button("Activity Monitor", action: openActivityMonitor)
-                if offeredStop, let process {
+                if offeredStop, context.isExcluded(identity) {
+                    Text("Excluded in Settings")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if offeredStop, let process {
                     switch stopService.eligibility(of: process) {
                     case .eligible:
                         Button("Request stop", role: .destructive) {
@@ -145,7 +149,7 @@ struct ProcessDetailView: View {
             }
             .controlSize(.small)
 
-            if offeredStop, let process, case .denied(let reason) = stopService.eligibility(of: process) {
+            if offeredStop, !context.isExcluded(identity), let process, case .denied(let reason) = stopService.eligibility(of: process) {
                 Text("Stop unavailable: \(reason)")
                     .font(.caption)
                     .foregroundStyle(.secondary)

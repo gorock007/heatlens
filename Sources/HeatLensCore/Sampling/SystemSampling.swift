@@ -30,13 +30,15 @@ public struct HostState: Hashable, Sendable {
     public let pressure: MemoryPressureLevel
     public let availablePercent: Int?
     public let thermalState: ThermalState
-    /// nil when `pmset` was not run or could not launch.
+    /// nil when `pmset` was not run, could not launch or timed out.
     public let pmset: PmsetThermalReport?
+    /// Why `pmset` gave no data (it failed to launch or missed its deadline); a scan notice.
+    public let pmsetNotice: String?
 
     public init(coreCount: Int, totalBytes: UInt64, freeBytes: UInt64, activeBytes: UInt64, inactiveBytes: UInt64,
                 wiredBytes: UInt64, compressedBytes: UInt64, swapUsedBytes: UInt64, swapTotalBytes: UInt64,
                 memoryAvailable: Bool, pressure: MemoryPressureLevel, availablePercent: Int?,
-                thermalState: ThermalState, pmset: PmsetThermalReport?) {
+                thermalState: ThermalState, pmset: PmsetThermalReport?, pmsetNotice: String? = nil) {
         self.coreCount = coreCount
         self.totalBytes = totalBytes
         self.freeBytes = freeBytes
@@ -51,6 +53,7 @@ public struct HostState: Hashable, Sendable {
         self.availablePercent = availablePercent
         self.thermalState = thermalState
         self.pmset = pmset
+        self.pmsetNotice = pmsetNotice
     }
 }
 
@@ -66,9 +69,19 @@ public protocol SystemSampling: Sendable {
 /// `ProcessInfo.thermalState`, and optionally `pmset -g therm` notes.
 public struct HostSystemSampler: SystemSampling {
     let readsPmset: Bool
+    let pmsetCommand: (executable: String, arguments: [String])
+    let pmsetDeadline: TimeInterval
 
     public init(readsPmset: Bool = true) {
+        self.init(readsPmset: readsPmset, pmsetCommand: ("/usr/bin/pmset", ["-g", "therm"]))
+    }
+
+    /// Tests substitute a slow stand-in for `pmset` to exercise the deadline.
+    init(readsPmset: Bool, pmsetCommand: (executable: String, arguments: [String]),
+         pmsetDeadline: TimeInterval = ChildProcess.defaultDeadline) {
         self.readsPmset = readsPmset
+        self.pmsetCommand = pmsetCommand
+        self.pmsetDeadline = pmsetDeadline
     }
 
     public func counters() -> HostCounters {
@@ -80,14 +93,16 @@ public struct HostSystemSampler: SystemSampling {
         let page = Self.sysctlUInt64("hw.pagesize") ?? 16384
         let swap = Self.swapUsage()
         var pmset: PmsetThermalReport?
+        var pmsetNotice: String?
         if readsPmset {
             do {
-                let output = try await ChildProcess.run("/usr/bin/pmset", ["-g", "therm"])
+                let output = try await ChildProcess.run(pmsetCommand.executable, pmsetCommand.arguments, deadline: pmsetDeadline)
                 if output.status == 0 { pmset = PmsetThermParser.parse(String(decoding: output.stdout, as: UTF8.self)) }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 pmset = nil
+                pmsetNotice = "pmset thermal data unavailable (\(error))."
             }
         }
         return HostState(coreCount: Int(Self.sysctlUInt64("hw.ncpu") ?? 0),
@@ -102,7 +117,7 @@ public struct HostSystemSampler: SystemSampling {
                          pressure: Self.sysctlInt32("kern.memorystatus_vm_pressure_level").map(MemoryPressureLevel.init(sysctlLevel:)) ?? .unknown,
                          availablePercent: Self.sysctlInt32("kern.memorystatus_level").map(Int.init),
                          thermalState: Self.thermalState(ProcessInfo.processInfo.thermalState),
-                         pmset: pmset)
+                         pmset: pmset, pmsetNotice: pmsetNotice)
     }
 
     static func thermalState(_ state: ProcessInfo.ThermalState) -> ThermalState {

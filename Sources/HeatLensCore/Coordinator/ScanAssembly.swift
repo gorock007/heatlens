@@ -157,6 +157,9 @@ enum ScanAssembly {
         if state.thermalState == .unavailable {
             notices.append("Thermal state unavailable.")
         }
+        if let pmsetNotice = state.pmsetNotice {
+            notices.append(pmsetNotice)
+        }
         return notices
     }
 }

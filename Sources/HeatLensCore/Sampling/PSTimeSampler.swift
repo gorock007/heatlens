@@ -23,6 +23,7 @@ public struct PSTimeSampler: Sendable {
 
     let executable: String
     let arguments: [String]
+    let deadline: TimeInterval
     let onLaunch: (@Sendable (Int32) -> Void)?
 
     public init() {
@@ -30,16 +31,19 @@ public struct PSTimeSampler: Sendable {
     }
 
     /// Tests substitute the executable (a slow one, to cancel mid-run) and observe child PIDs.
-    init(executable: String, arguments: [String], onLaunch: (@Sendable (Int32) -> Void)? = nil) {
+    /// A run past `deadline` throws `ChildProcess.TimedOut`, which the scan reports as a ps failure.
+    init(executable: String, arguments: [String], deadline: TimeInterval = ChildProcess.defaultDeadline,
+         onLaunch: (@Sendable (Int32) -> Void)? = nil) {
         self.executable = executable
         self.arguments = arguments
+        self.deadline = deadline
         self.onLaunch = onLaunch
     }
 
     /// One `ps` run. Throws `CancellationError` (after the child has exited) when cancelled.
     public func snapshot() async throws -> Reading {
         let before = ProcessCounters.monotonicNow()
-        let output = try await ChildProcess.run(executable, arguments, onLaunch: onLaunch)
+        let output = try await ChildProcess.run(executable, arguments, deadline: deadline, onLaunch: onLaunch)
         let after = ProcessCounters.monotonicNow()
         guard output.status == 0 else { throw Failure(description: "ps exited with status \(output.status)") }
         return Reading(monotonicNanoseconds: before + (after - before) / 2,

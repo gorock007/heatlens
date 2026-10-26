@@ -191,6 +191,22 @@ struct CoordinatorAssemblyTests {
         #expect(snapshot.notices.contains { $0.contains("CPU for 1 root/other-user processes is unavailable") })
         #expect(snapshot.notices.contains { $0.hasPrefix("Total CPU load unavailable") })
     }
+
+    @Test("a pmset notice from the host state reaches the scan notices")
+    func pmsetNotice() {
+        let t0 = Date()
+        let counters = ProcessCounters(monotonicNanoseconds: 1, wallClock: t0, processes: [])
+        let later = ProcessCounters(monotonicNanoseconds: 1_000_000_001, wallClock: t0.addingTimeInterval(1), processes: [])
+        let timedOut = HostState(coreCount: 2, totalBytes: 1 << 30, freeBytes: 0, activeBytes: 0, inactiveBytes: 0, wiredBytes: 0,
+                                 compressedBytes: 0, swapUsedBytes: 0, swapTotalBytes: 0, memoryAvailable: true, pressure: .normal,
+                                 availablePercent: nil, thermalState: .nominal, pmset: nil,
+                                 pmsetNotice: "pmset thermal data unavailable (/usr/bin/pmset did not finish within 5 s).")
+        let snapshot = ScanAssembly.snapshot(startedAt: t0, before: counters, after: later, psBefore: nil, psAfter: nil,
+                                             psFailure: nil, hostBefore: HostCounters(perCore: nil, swapOuts: nil),
+                                             hostAfter: HostCounters(perCore: nil, swapOuts: nil), state: timedOut)
+        #expect(snapshot.notices.contains("pmset thermal data unavailable (/usr/bin/pmset did not finish within 5 s)."))
+        #expect(snapshot.system.pmsetCPUSpeedLimit == nil)
+    }
 }
 
 @Suite("ScanCoordinator against this Mac", .serialized)

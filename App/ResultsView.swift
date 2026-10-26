@@ -6,9 +6,12 @@ struct ReportContext {
     let report: ScanReport
     let processes: [ProcessIdentity: ProcessSample]
     let observedAt: Date
+    /// Findings the user's exclusions hide (Settings).
+    let hiddenFindingIDs: Set<UUID>
 
-    init(report: ScanReport) {
+    init(report: ScanReport, hiddenFindingIDs: Set<UUID> = []) {
         self.report = report
+        self.hiddenFindingIDs = hiddenFindingIDs
         processes = Dictionary(report.snapshot.processes.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
         observedAt = report.snapshot.startedAt.addingTimeInterval(report.snapshot.interval)
     }
@@ -23,6 +26,13 @@ struct ReportContext {
 
     func findings(for identity: ProcessIdentity) -> [DiagnosticFinding] {
         report.findings.filter { $0.affectedProcesses.contains(identity) }
+    }
+
+    /// True when this process has findings and the user's exclusions hide every one of them;
+    /// an exclusion also suppresses the stop offer.
+    func isExcluded(_ identity: ProcessIdentity) -> Bool {
+        let own = findings(for: identity)
+        return !own.isEmpty && own.allSatisfy { hiddenFindingIDs.contains($0.id) }
     }
 
     func offersStop(for identity: ProcessIdentity) -> Bool {
@@ -63,7 +73,11 @@ struct ResultsView: View {
     @State private var selectedProcess: ProcessIdentity?
     @State private var stopTarget: StopTarget?
 
-    private var context: ReportContext { ReportContext(report: report) }
+    private var context: ReportContext {
+        let base = ReportContext(report: report)
+        let visible = Set(visibleFindings(context: base).map(\.id))
+        return ReportContext(report: report, hiddenFindingIDs: Set(report.findings.map(\.id)).subtracting(visible))
+    }
 
     var body: some View {
         let context = self.context
@@ -247,6 +261,8 @@ struct StopFlowView: View {
     }
 
     private func requestStop() {
+        // A double-click can call this twice before SwiftUI re-renders; only the first one acts.
+        guard case .confirmation = phase else { return }
         phase = .stopping
         Task {
             let outcome = await stopService.requestStop(target.identity, wait: 3)

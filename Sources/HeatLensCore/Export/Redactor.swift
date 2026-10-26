@@ -145,7 +145,7 @@ private extension Redactor {
         findings: [DiagnosticFinding],
         homeDirectory: String
     ) -> RedactedReport {
-        let sanitizer = Sanitizer(homeDirectory: homeDirectory)
+        let sanitizer = Sanitizer(homeDirectory: homeDirectory, groups: groups)
         return RedactedReport(
             scanID: snapshot.id,
             startedAt: snapshot.startedAt,
@@ -206,37 +206,100 @@ private extension Redactor {
 private struct Sanitizer {
     let homeDirectory: String
     let username: String
+    /// Labels built from an argv script name (`node sync.js`) and what they export as
+    /// (`node <script>`). The app still shows the real label; only the export hides it.
+    let scriptLabels: [(label: String, replacement: String)]
 
-    init(homeDirectory: String) {
+    init(homeDirectory: String, groups: [ProcessGroup] = []) {
         let trimmed = homeDirectory.count > 1 && homeDirectory.hasSuffix("/")
             ? String(homeDirectory.dropLast())
             : homeDirectory
         self.homeDirectory = trimmed
         self.username = URL(fileURLWithPath: trimmed).lastPathComponent
+        var labels: [String: String] = [:]
+        for group in groups where group.kind.hasSuffix(" script") {
+            let tool = String(group.kind.dropLast(" script".count))
+            let replacement = "\(tool) <script>"
+            if group.label != replacement, group.label != tool { labels[group.label] = replacement }
+        }
+        // Longest first, so one label never leaves a fragment of a longer one behind.
+        self.scriptLabels = labels.map { ($0.key, $0.value) }.sorted { $0.label.count > $1.label.count }
     }
+
+    /// Option names that carry a secret, with a `=value` or a following value that isn't another flag.
+    static let secretFlag = "-{1,2}[\\w-]*(?:token|key|password|passwd|secret)[\\w-]*(?:=\\S+|\\s+(?!-)\\S+)"
+    /// `API_TOKEN=x`-style environment assignments.
+    static let secretAssignment = "\\b[A-Z_]*(?:TOKEN|KEY|SECRET|PASSWORD)=\\S+"
+    /// A short `-p value` is only a password when the same text names a password option too,
+    /// since `-p 3000` is usually a port.
+    static let passwordContext = "(?i)(?:^|\\s)-{1,2}[\\w-]*pass[\\w-]*"
+    static let shortPasswordFlag = "(?:^|(?<=\\s))-p(?:=|\\s+)(?!-)\\S+"
+    /// Well-known credential prefixes, not glued to a preceding letter or digit (`task-runner` isn't `sk-…`).
+    static let credentialPrefix = "(?<![A-Za-z0-9])(?:gh[po]_[A-Za-z0-9]|xox[abpr]-|sk-[A-Za-z0-9_-]{16}|AKIA[0-9A-Z]{16})"
+    static let longHex = "[0-9a-fA-F]{32,}"
+    static let base64Run = "[A-Za-z0-9+=_-]{32,}"
 
     func text(_ raw: String) -> String {
         var value = raw
+        for script in scriptLabels {
+            value = value.replacingOccurrences(of: script.label, with: script.replacement)
+        }
         if value == homeDirectory {
             value = "~"
         } else if !homeDirectory.isEmpty {
             value = value.replacingOccurrences(of: homeDirectory + "/", with: "~/")
         }
         if !username.isEmpty, username != "/" {
+            // Whole words and path components only: user `al` must not turn /usr/local into /usr/loc<user>.
             value = value.replacingOccurrences(
-                of: NSRegularExpression.escapedPattern(for: username),
+                of: "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: username) + "(?![A-Za-z0-9_])",
                 with: "<user>",
                 options: [.regularExpression, .caseInsensitive]
             )
         }
-        for option in ["token", "api[-_]?key", "password", "secret"] {
-            value = value.replacingOccurrences(
-                of: "--\(option)(?:=|\\s+)\\S+",
-                with: "<secret redacted>",
-                options: [.regularExpression, .caseInsensitive]
-            )
+        value = value.replacingOccurrences(of: Self.secretFlag, with: "<secret redacted>",
+                                           options: [.regularExpression, .caseInsensitive])
+        value = value.replacingOccurrences(of: Self.secretAssignment, with: "<secret redacted>", options: .regularExpression)
+        if raw.range(of: Self.passwordContext, options: .regularExpression) != nil {
+            value = value.replacingOccurrences(of: Self.shortPasswordFlag, with: "<secret redacted>", options: .regularExpression)
         }
-        return value
+        return redactingCredentialComponents(value)
+    }
+
+    /// Replaces each path component or word that looks like a credential with `<redacted>`.
+    func redactingCredentialComponents(_ value: String) -> String {
+        var result = ""
+        var component = ""
+        func flush() {
+            result += Self.looksLikeCredential(component) ? "<redacted>" : component
+            component = ""
+        }
+        for character in value {
+            if character == "/" || character.isWhitespace {
+                flush()
+                result.append(character)
+            } else {
+                component.append(character)
+            }
+        }
+        flush()
+        return result
+    }
+
+    static func looksLikeCredential(_ component: String) -> Bool {
+        guard component.count >= 4 else { return false }
+        if component.range(of: credentialPrefix, options: .regularExpression) != nil { return true }
+        if component.range(of: longHex, options: .regularExpression) != nil { return true }
+        // Base64-ish: a long unbroken run mixing upper case, lower case and digits.
+        var searchStart = component.startIndex
+        while let run = component.range(of: base64Run, options: .regularExpression, range: searchStart..<component.endIndex) {
+            let text = component[run]
+            if text.contains(where: \.isUppercase), text.contains(where: \.isLowercase), text.contains(where: \.isNumber) {
+                return true
+            }
+            searchStart = run.upperBound
+        }
+        return false
     }
 
     func arguments(_ arguments: [String]?) -> [String]? {
