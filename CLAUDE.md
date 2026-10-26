@@ -16,6 +16,6 @@ Jarvis-only rules live in `handoffs/JARVIS.md`.
 
 ## Checks
 
-`export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build 2>&1 | tail -20 && swift test 2>&1 | tail -30` (Xcode is installed but not selected, so `DEVELOPER_DIR` is required; the app-bundle build command joins this line after Phase 0)
+`export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build 2>&1 | tail -20 && swift test 2>&1 | tail -30`, then `scripts/run-app.sh --build-only 2>&1 | tail -20` for the app (Xcode is installed but not selected, so `DEVELOPER_DIR` is required)
 
 If the tooling changes, update this line and the same one in `AGENTS.md`.
