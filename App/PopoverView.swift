@@ -1,40 +1,22 @@
 import SwiftUI
 
-/// Idle popover (PRD §7 "Popover / idle"). Holds no timers and does no work
-/// until the user acts; scanning is wired in Phase 1.
+/// The menu-bar popover (PRD §7): idle, scanning or results. Holds no timers; the only work
+/// happens inside a scan the user started.
 struct PopoverView: View {
-    @State private var scanRequested = false
+    let model: ScanModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("HeatLens")
-                    .font(.headline)
-                Spacer()
-                Text("Last scan: never")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            switch model.state {
+            case .idle(let lastScan):
+                IdleView(lastScan: lastScan) { model.startScan() }
+            case .scanning(let elapsed, let total):
+                ScanningView(elapsed: elapsed, total: total) { model.cancel() }
+            case .results(let report):
+                ResultsView(report: report, onScanAgain: { model.startScan() }, onDone: { model.dismiss() })
+            case .failed(let message):
+                FailedView(message: message, onRetry: { model.startScan() }, onDone: { model.dismiss() })
             }
-
-            Button {
-                scanRequested = true
-            } label: {
-                Text("Scan now")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
-
-            if scanRequested {
-                Text("Scanning arrives in Phase 1.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Nothing is monitored until you scan.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
             Divider()
 
@@ -51,6 +33,98 @@ struct PopoverView: View {
     }
 }
 
-#Preview {
-    PopoverView()
+private struct Header: View {
+    var trailing: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("HeatLens")
+                .font(.headline)
+            Spacer()
+            if let trailing {
+                Text(trailing)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct IdleView: View {
+    let lastScan: Date?
+    let onScan: () -> Void
+
+    var body: some View {
+        Group {
+            if let lastScan {
+                // Re-evaluated only while the popover is on screen.
+                TimelineView(.everyMinute) { context in
+                    Header(trailing: "Last scan: \(Format.relative(lastScan, now: context.date))")
+                }
+            } else {
+                Header(trailing: "Last scan: never")
+            }
+        }
+
+        Button(action: onScan) {
+            Text("Scan now")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .keyboardShortcut(.defaultAction)
+
+        Text("Nothing is monitored until you scan.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}
+
+private struct ScanningView: View {
+    let elapsed: TimeInterval
+    let total: TimeInterval
+    let onCancel: () -> Void
+
+    var body: some View {
+        Header()
+
+        Text("Measuring process activity (\(Int(elapsed)) of \(Int(total)) seconds)")
+            .font(.callout)
+
+        ProgressView(value: min(elapsed, total), total: max(total, 1))
+
+        HStack {
+            Spacer()
+            Button("Cancel", action: onCancel)
+                .keyboardShortcut(.cancelAction)
+        }
+    }
+}
+
+private struct FailedView: View {
+    let message: String
+    let onRetry: () -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        Header()
+
+        Label("The scan didn't finish", systemImage: "exclamationmark.triangle")
+            .font(.callout.weight(.semibold))
+        Text(message)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+        HStack {
+            Button("Done", action: onDone)
+            Spacer()
+            Button("Try again", action: onRetry)
+                .keyboardShortcut(.defaultAction)
+        }
+    }
+}
+
+#Preview("Idle") {
+    PopoverView(model: ScanModel(service: FixtureScanService()))
 }

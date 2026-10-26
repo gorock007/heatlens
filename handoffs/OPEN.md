@@ -13,7 +13,6 @@ Usage band: green (5h 11% used, 17:09)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-26 17:38 · claude/claude-opus-5-5 medium · term a2b37c32-3fd9-4557-a304-b668d9a900d8 · handoffs/briefs/2026-10-26-1736-p1-popover-ui.md
 - 2026-10-26 17:38 · codex/gpt-5.6-sol high · term 735b75d5-8e69-4204-af10-5ba422313432 · handoffs/briefs/2026-10-26-1736-p1-provenance-rules-export.md
 - 2026-10-26 17:38 · claude/claude-opus-5-5 high · term cfc4cdd5-06b3-4a80-8532-bfca93e7dffd · handoffs/briefs/2026-10-26-1736-p1-samplers-coordinator.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->

@@ -8,12 +8,18 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
+packages:
+  HeatLensCore:
+    path: .
 targets:
   HeatLens:
     type: application
     platform: macOS
     sources:
       - App
+    dependencies:
+      - package: HeatLensCore
+        product: HeatLensCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.heatlens.HeatLens
