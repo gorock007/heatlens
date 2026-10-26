@@ -97,6 +97,7 @@ public struct RulesEngine: Sendable {
                     group: group,
                     samples: samples,
                     impact: cpu,
+                    offersStop: true,
                     key: "stale-\(group.root.pid)-\(group.root.startTimeMicros)"
                 ))
             }
@@ -119,6 +120,7 @@ public struct RulesEngine: Sendable {
                     group: group,
                     samples: samples,
                     impact: cpu,
+                    offersStop: true,
                     key: "detached-\(group.root.pid)-\(group.root.startTimeMicros)"
                 ))
             }
@@ -164,6 +166,7 @@ private extension RulesEngine {
         group: ProcessGroup,
         samples: [ProcessSample],
         impact: Double,
+        offersStop: Bool = false,
         key: String
     ) -> RankedFinding {
         RankedFinding(
@@ -176,14 +179,16 @@ private extension RulesEngine {
                 evidence: evidence,
                 limitations: limitations,
                 affectedProcesses: group.members,
-                recommendedActions: actions(for: group, samples: samples),
+                recommendedActions: actions(for: group, samples: samples, offersStop: offersStop),
                 kind: kind
             ),
             impact: impact
         )
     }
 
-    func actions(for group: ProcessGroup, samples: [ProcessSample]) -> [SuggestedAction] {
+    /// `offersStop` is true only for review findings about leftovers (stale servers, detached
+    /// workers); the stop is then added for the group's root when `ProcessTerminator` allows it.
+    func actions(for group: ProcessGroup, samples: [ProcessSample], offersStop: Bool) -> [SuggestedAction] {
         var actions: [SuggestedAction] = [.inspect(group.root)]
         if let project = group.project { actions.append(.openProject(path: project.directory)) }
         if let root = samples.first(where: { $0.identity == group.root }),
@@ -193,6 +198,10 @@ private extension RulesEngine {
         }
         actions.append(.openActivityMonitor)
         actions.append(.copyReport)
+        if offersStop, let root = samples.first(where: { $0.identity == group.root }),
+           ProcessTerminator().eligibility(of: root) == .eligible {
+            actions.append(.requestStop(group.root))
+        }
         return actions
     }
 

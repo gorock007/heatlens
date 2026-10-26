@@ -85,19 +85,68 @@ struct RulesEngineTests {
         #expect(kernel.limitations.joined().contains("thermal management"))
     }
 
-    @Test("Phase 1 never recommends requestStop", arguments: [
+    @Test("requestStop appears only on eligible review findings, for the group root", arguments: [
         SyntheticSnapshots.activeWork,
         SyntheticSnapshots.detachedWorker,
         SyntheticSnapshots.oldNextServer,
         SyntheticSnapshots.hotVitestAndIdleWorker,
         SyntheticSnapshots.multiCore,
+        SyntheticSnapshots.snapshot([
+            SyntheticSnapshots.process(pid: 900, owner: .root, name: "WindowServer", cpu: 31),
+            SyntheticSnapshots.process(pid: 0, owner: .root, name: "kernel_task", cpu: 51),
+        ], pressure: .critical, thermal: .serious),
     ])
-    func neverRequestsStop(snapshot: ScanSnapshot) {
-        let actions = evaluate(snapshot).flatMap(\.recommendedActions)
-        #expect(actions.allSatisfy { action in
-            if case .requestStop = action { return false }
-            return true
-        })
+    func requestStopOnlyOnEligibleReview(snapshot: ScanSnapshot) {
+        let samples = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.identity, $0) })
+        for finding in evaluate(snapshot) {
+            let stops = stopTargets(finding)
+            guard !stops.isEmpty else { continue }
+            #expect([FindingKind.staleDevServer, .detachedWorker].contains(finding.kind))
+            #expect(finding.severity == .review)
+            #expect(stops.count == 1)
+            // `.inspect` names the group root; the stop must target the same process.
+            #expect(stops.first == inspectTarget(finding))
+            #expect(stops.first.flatMap { samples[$0] }.map { ProcessTerminator().eligibility(of: $0) } == .eligible)
+        }
+    }
+
+    @Test("Stale servers and detached workers offer a stop; high CPU and system findings never do")
+    func requestStopWhereExpected() throws {
+        let detached = try #require(evaluate(SyntheticSnapshots.detachedWorker).first { $0.kind == .detachedWorker })
+        #expect(stopTargets(detached) == [detached.affectedProcesses[0]])
+
+        let stale = try #require(evaluate(SyntheticSnapshots.oldNextServer).first { $0.kind == .staleDevServer })
+        #expect(stopTargets(stale).count == 1)
+
+        let mixed = evaluate(SyntheticSnapshots.hotVitestAndIdleWorker)
+        #expect(mixed.filter { $0.kind == .detachedWorker }.allSatisfy { stopTargets($0).count == 1 })
+        let hot = evaluate(SyntheticSnapshots.multiCore) + evaluate(SyntheticSnapshots.activeWork) + mixed
+        #expect(hot.filter { $0.kind == .highCPU }.allSatisfy { stopTargets($0).isEmpty })
+    }
+
+    @Test("A leftover whose root fails eligibility gets no stop", arguments: [
+        SyntheticSnapshots.process(pid: 200, ageHours: 48, owner: .root, name: "node", executablePath: "/usr/local/bin/node",
+                                   arguments: ["node", "/Users/someone/Developer/Orchard/scripts/worker.js"],
+                                   currentDirectory: "/Users/someone/Developer/Orchard", cpu: 0.1),
+        SyntheticSnapshots.process(pid: 200, ageHours: 48, name: "node", executablePath: "/usr/bin/node",
+                                   arguments: ["node", "/Users/someone/Developer/Orchard/scripts/worker.js"],
+                                   currentDirectory: "/Users/someone/Developer/Orchard", cpu: 0.1),
+        SyntheticSnapshots.process(pid: 200, ageHours: 48, name: "node", executablePath: nil,
+                                   arguments: ["node", "/Users/someone/Developer/Orchard/scripts/worker.js"],
+                                   currentDirectory: "/Users/someone/Developer/Orchard", cpu: 0.1),
+    ])
+    func ineligibleLeftover(root: ProcessSample) throws {
+        let findings = evaluate(SyntheticSnapshots.snapshot([root]))
+        let detached = try #require(findings.first { $0.kind == .detachedWorker })
+        #expect(stopTargets(detached).isEmpty)
+    }
+
+    private func stopTargets(_ finding: DiagnosticFinding) -> [ProcessIdentity] {
+        finding.recommendedActions.compactMap { if case .requestStop(let id) = $0 { id } else { nil } }
+    }
+
+    private func inspectTarget(_ finding: DiagnosticFinding) -> ProcessIdentity? {
+        finding.recommendedActions.lazy.compactMap { if case .inspect(let id) = $0 { id } else { nil } }.first
     }
 
     @Test("Every finding carries the kind of rule that produced it")
