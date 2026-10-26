@@ -1,5 +1,7 @@
 # HeatLens feasibility (Phase 0a)
 
+> Note: the probe has since become a thin CLI over `ScanCoordinator` (Phase 1.1); the sample output below is from the Phase 0 spike and its format differs from today's `heatlens-probe`.
+
 Measured on 2026-10-26 on the target machine: MacBook Pro M3 Pro (Mac15,6, 11 cores = 5 P + 6 E,
 18 GB), macOS 27.0.1 (26A434), Xcode 26.6 / SDK 26.5, Swift 6.3.3. Every claim below was
 produced by `swift run heatlens-probe` (source in `Sources/heatlens-probe/`), run while the
