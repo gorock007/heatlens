@@ -62,7 +62,8 @@ Several workers edit the same checkout at once, on separate terminals. So:
   synthetic, or redacted down to `~/…` and placeholder names.
 - **Verification:** the user builds and launches the menu-bar app with the exact command from the handoff, clicks Scan now, and compares the result with Activity Monitor; `swift test` covers the engine. Every handoff names the command to run and what to look at.
 - **Checks:** run `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build 2>&1 | tail -20 && swift test 2>&1 | tail -30`, then `scripts/run-app.sh --build-only 2>&1 | tail -20` for the app (Xcode is installed but not selected, so `DEVELOPER_DIR` is required) before handing off and report the results. Say
-  plainly what you didn't check.
+  plainly what you didn't check.  
+  To bound a run that might hang, prefix it with `scripts/with-timeout.sh 600` (it kills the whole process group, including `swiftpm-testing-helper`).
 
 ## When you finish a task
 

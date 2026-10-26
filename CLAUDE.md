@@ -16,6 +16,7 @@ Jarvis-only rules live in `handoffs/JARVIS.md`.
 
 ## Checks
 
-`export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build 2>&1 | tail -20 && swift test 2>&1 | tail -30`, then `scripts/run-app.sh --build-only 2>&1 | tail -20` for the app (Xcode is installed but not selected, so `DEVELOPER_DIR` is required)
+`export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build 2>&1 | tail -20 && swift test 2>&1 | tail -30`, then `scripts/run-app.sh --build-only 2>&1 | tail -20` for the app (Xcode is installed but not selected, so `DEVELOPER_DIR` is required)  
+To bound a run that might hang, prefix it with `scripts/with-timeout.sh 600` (it kills the whole process group, including `swiftpm-testing-helper`).
 
 If the tooling changes, update this line and the same one in `AGENTS.md`.
