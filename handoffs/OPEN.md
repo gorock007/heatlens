@@ -13,6 +13,7 @@ Usage band: amber (5h 22% used, 17:08)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
+- 2026-10-27 17:53 · claude/claude-opus-5-5 medium · term 0d4e02a4-8c6e-4b62-b053-a8e5e9989c4a · handoffs/briefs/2026-10-27-1800-p10f-check-for-updates.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
@@ -21,6 +22,7 @@ Usage band: amber (5h 22% used, 17:08)
 
 ## To-do
 - v1.1.0 RELEASED 2026-10-27 (https://github.com/gorock007/heatlens/releases/tag/v1.1.0): movable panel (6a), ports (8a), heatlens CLI/MCP bundled at Contents/Helpers/heatlens + Settings connect (7a/7b), report cap (7c). Notarization accepted the nested helper. Site download auto-serves it (releases/latest). 7d site copy merged (OpenCode; needed one correction: printed handoff instead of saving it).
+- 10f click-only 'Check for updates…' RUNNING (user ruling 2026-10-27: option 2, click-only, no background/launch check, opens release page, no auto-install). On merge: bump to 1.2.1 (build 5) in project.yml + Arguments.swift, release.sh, gh release v1.2.1 with a note that 1.0–1.2.0 users must download once by hand. Site copy edits are inside 10f.
 - Feature backlog (user-approved list) is now EMPTY. AI ruling stands: explain + propose typed actions only; no free-form command execution; CLI/MCP read-only.
 - Phase 10 rulings (user, 2026-10-27): 10a thermal alert = opt-in/off by default, on rise to serious/critical run ONE scan + notify top culprit, click opens results, ≤1 per 30 min, no polling. 10b stop leftovers = one dialog listing each process with checkboxes, each PID revalidated before its SIGTERM, only rule-flagged leftovers, ≥2 per project. 10c before/after = in memory only; after a stop offer 'Rescan to see the difference'; any scan with a previous one this session shows 'Since last scan' (CPU, memory, swap, thermal, processes gone). 10d hotkey = fixed ⌃⌥H toggles panel, OFF by default, switch in Settings, no new dependency.
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
