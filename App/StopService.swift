@@ -34,3 +34,36 @@ struct StopTarget: Identifiable {
     let process: ProcessSample
     let project: ProjectAttribution?
 }
+
+/// Stop results in words, shared by the single and the batch stop flows so both say the same thing.
+enum StopWording {
+    /// The full sentence after one stop, e.g. "Process PID 23001 exited after SIGTERM."
+    static func message(for outcome: StopOutcome, pid: Int32) -> String {
+        switch outcome {
+        case .stopped:
+            "Process PID \(pid) exited after SIGTERM."
+        case .stillRunning:
+            "Process PID \(pid) didn't exit. HeatLens does not force-quit; use Activity Monitor if needed."
+        case .alreadyExited:
+            "Process PID \(pid) had already exited. Nothing was sent."
+        case .identityChanged:
+            "PID \(pid) now belongs to a different process. Nothing was sent."
+        case .denied(let reason):
+            "HeatLens didn't send SIGTERM: \(reason)"
+        case .failed(let errno):
+            "HeatLens couldn't send SIGTERM to PID \(pid) (error \(errno)). Nothing else was changed."
+        }
+    }
+
+    /// A short row status for the same outcome, e.g. "stopped", "skipped: it changed".
+    static func status(for outcome: StopOutcome) -> String {
+        switch outcome {
+        case .stopped: "stopped"
+        case .stillRunning: "still running"
+        case .alreadyExited: "already gone"
+        case .identityChanged: "skipped: it changed"
+        case .denied: "skipped: not allowed"
+        case .failed(let errno): "couldn't send (error \(errno))"
+        }
+    }
+}

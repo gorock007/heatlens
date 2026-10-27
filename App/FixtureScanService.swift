@@ -79,6 +79,11 @@ private struct Fixture {
         process(23003, parent: 23002, age: 38 * Self.hour, name: "next-server",
                 argv: ["next-server (v15.0.0)"], cwd: "~/Projects/portfolio-demo", cpuPercent: 1.1, megabytes: 610)
     }
+    var imageWatcher: ProcessSample {
+        process(23140, parent: 1, age: 26 * Self.hour, name: "node",
+                argv: ["/usr/local/bin/node", "~/Projects/portfolio-demo/scripts/watch-images.js"],
+                cwd: "~/Projects/portfolio-demo", cpuPercent: 0, megabytes: 72)
+    }
     var caffeinate: ProcessSample {
         process(4120, parent: 4101, age: 3 * Self.hour, name: "caffeinate",
                 argv: ["/usr/bin/caffeinate", "-i"], cwd: "~/Projects/jarvis-demo", cpuPercent: 0, megabytes: 2)
@@ -93,7 +98,7 @@ private struct Fixture {
     }
 
     var processes: [ProcessSample] {
-        [browser, opencode, opencodeWorker, caffeinate, nextServer, nextDev, npm, worker, windowServer]
+        [browser, opencode, opencodeWorker, caffeinate, nextServer, nextDev, npm, imageWatcher, worker, windowServer]
     }
 
     // MARK: Ports
@@ -162,6 +167,11 @@ private struct Fixture {
             ProcessGroup(root: worker.identity, members: [worker.identity], kind: "node script",
                          label: "Node script worker.js",
                          project: ProjectAttribution(directory: "~/Projects/demo-site", basis: "argv path", confidence: .medium),
+                         confidence: .medium,
+                         evidence: [Evidence(label: "Parent", value: "launchd (PPID 1)", source: "proc_pidinfo")]),
+            ProcessGroup(root: imageWatcher.identity, members: [imageWatcher.identity], kind: "node script",
+                         label: "Node script watch-images.js",
+                         project: ProjectAttribution(directory: "~/Projects/portfolio-demo", basis: "cwd", confidence: .high),
                          confidence: .medium,
                          evidence: [Evidence(label: "Parent", value: "launchd (PPID 1)", source: "proc_pidinfo")]),
             ProcessGroup(root: windowServer.identity, members: [windowServer.identity], kind: "unknown",
@@ -239,6 +249,22 @@ private struct Fixture {
                 recommendedActions: [.inspect(npm.identity), .openProject(path: "~/Projects/portfolio-demo"),
                                      .copyCommand(nextDev.identity), .requestStop(npm.identity)],
                 kind: .staleDevServer),
+            DiagnosticFinding(
+                title: "Possible leftover image watcher",
+                severity: .review, confidence: .medium,
+                explanation: "node …/scripts/watch-images.js · PID 23140 · elapsed 1d 2h · 0% CPU in sample · PPID 1. "
+                    + "A second leftover in portfolio-demo; stopping it is unlikely to fix current heat.",
+                evidence: [
+                    Evidence(label: "Parent", value: "launchd (PPID 1)", source: "proc_pidinfo"),
+                    Evidence(label: "Elapsed", value: "1d 2h", source: "proc_pidinfo"),
+                    Evidence(label: "CPU in sample", value: "0.0% of one core", source: "proc_pid_rusage"),
+                    Evidence(label: "Script", value: "~/Projects/portfolio-demo/scripts/watch-images.js", source: "argv"),
+                ],
+                limitations: ["PPID 1 is a clue, not proof.", "This does not prove it is unused."],
+                affectedProcesses: [imageWatcher.identity],
+                recommendedActions: [.inspect(imageWatcher.identity), .openProject(path: "~/Projects/portfolio-demo"),
+                                     .copyCommand(imageWatcher.identity), .requestStop(imageWatcher.identity)],
+                kind: .detachedWorker),
             DiagnosticFinding(
                 title: "Keeping your Mac awake: OpenCode agent",
                 severity: .info, confidence: .high,

@@ -78,6 +78,7 @@ struct ResultsView: View {
 
     @State private var selectedProcess: ProcessIdentity?
     @State private var stopTarget: StopTarget?
+    @State private var batchTarget: ProjectLeftovers?
 
     private var context: ReportContext {
         let base = ReportContext(report: report)
@@ -98,6 +99,9 @@ struct ResultsView: View {
         .sheet(item: $stopTarget) { target in
             StopFlowView(target: target, stopService: stopService, onScanAgain: onScanAgain)
         }
+        .sheet(item: $batchTarget) { leftovers in
+            BatchStopFlowView(leftovers: leftovers, context: context, stopService: stopService, onScanAgain: onScanAgain)
+        }
     }
 
     @ViewBuilder
@@ -105,6 +109,7 @@ struct ResultsView: View {
         let visible = visibleFindings(context: context)
         let findings = visible.filter { $0.severity != .review }
         let leftovers = visible.filter { $0.severity == .review }
+        let batchAbove = batchesByFirstFinding(context: context)
         let hiddenCount = report.findings.count - visible.count
 
         VStack(alignment: .leading, spacing: 2) {
@@ -136,8 +141,11 @@ struct ResultsView: View {
 
                 ResultSection(title: "Potential leftovers") {
                     if leftovers.isEmpty { EmptyNote("No long-running candidates found.") }
-                    ForEach(leftovers) {
-                        FindingCard(finding: $0, context: context, stopService: stopService,
+                    ForEach(leftovers) { finding in
+                        if let batch = batchAbove[finding.id] {
+                            BatchStopRow(leftovers: batch) { batchTarget = batch }
+                        }
+                        FindingCard(finding: finding, context: context, stopService: stopService,
                                     onInspect: { selectedProcess = $0 }, onRequestStop: { stopTarget = $0 })
                     }
                 }
@@ -175,6 +183,20 @@ struct ResultsView: View {
             Button("Scan again", action: onScanAgain)
                 .keyboardShortcut(.defaultAction)
         }
+    }
+
+    /// Projects with 2 or more stoppable leftovers, keyed by the first of their findings, so the
+    /// batch button shows once per project, above that project's first leftover card.
+    private func batchesByFirstFinding(context: ReportContext) -> [UUID: ProjectLeftovers] {
+        let batches = LeftoverCandidates.batches(
+            findings: report.findings, groups: report.groups, processes: report.snapshot.processes,
+            hiddenFindingIDs: context.hiddenFindingIDs,
+            isEligible: { if case .eligible = stopService.eligibility(of: $0) { true } else { false } })
+        var byFinding: [UUID: ProjectLeftovers] = [:]
+        for batch in batches {
+            if let first = batch.candidates.first { byFinding[first.finding.id] = batch }
+        }
+        return byFinding
     }
 
     private func visibleFindings(context: ReportContext) -> [DiagnosticFinding] {
@@ -284,24 +306,26 @@ struct StopFlowView: View {
         phase = .stopping
         Task {
             let outcome = await stopService.requestStop(target.identity, wait: 3)
-            phase = .outcome(message(for: outcome))
+            phase = .outcome(StopWording.message(for: outcome, pid: target.identity.pid))
         }
     }
+}
 
-    private func message(for outcome: StopOutcome) -> String {
-        switch outcome {
-        case .stopped:
-            "Process PID \(target.identity.pid) exited after SIGTERM."
-        case .stillRunning:
-            "Process PID \(target.identity.pid) didn't exit. HeatLens does not force-quit; use Activity Monitor if needed."
-        case .alreadyExited:
-            "Process PID \(target.identity.pid) had already exited. Nothing was sent."
-        case .identityChanged:
-            "PID \(target.identity.pid) now belongs to a different process. Nothing was sent."
-        case .denied(let reason):
-            "HeatLens didn't send SIGTERM: \(reason)"
-        case .failed(let errno):
-            "HeatLens couldn't send SIGTERM to PID \(target.identity.pid) (error \(errno)). Nothing else was changed."
+/// "portfolio-demo has 2 leftovers  [Stop leftovers (2)…]", above that project's first leftover card.
+private struct BatchStopRow: View {
+    let leftovers: ProjectLeftovers
+    let onStop: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(verbatim: "\(leftovers.projectName) has \(leftovers.candidates.count) leftovers")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button("Stop leftovers (\(leftovers.candidates.count))…", role: .destructive, action: onStop)
+                .controlSize(.small)
+                .help("Review and stop \(leftovers.project.directory)'s leftovers together, one confirmation")
         }
     }
 }
