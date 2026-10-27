@@ -230,6 +230,21 @@
             <p>The overview reports the thermal state macOS itself publishes (nominal, fair, serious or critical), how many cores were busy, memory pressure and swap. There is no temperature reading and no GPU percentage, because no supported API provides a reliable one. WindowServer activity is shown as UI rendering, not as GPU load.</p>
             <div class="sample"><span class="k">Thermal state</span> Nominal<br><span class="k">CPU load</span> 3.2 of 11 cores busy<br><span class="k">Memory pressure</span> Normal</div>
           </div>
+          <div>
+            <h3>Who holds each port</h3>
+            <p>After a scan, a Ports section shows which process and which project holds each listening TCP port. Click a row to inspect it, then use the usual actions.</p>
+            <div class="sample"><span class="k">:3000</span> next-server · PID 23014<br><span class="k">Scope</span> loopback<br><span class="k">Project</span> ~/Projects/portfolio-demo</div>
+          </div>
+          <div>
+            <h3>Ask your AI agent</h3>
+            <p>HeatLens ships a read-only MCP server. Settings → Connect to an AI agent copies the setup command for Claude Code or Codex, and then you can ask your agent "why is my Mac hot?". The agent can run a scan or list ports, but it can't stop anything, and reports are always redacted.</p>
+            <div class="sample"><span class="k">Tools</span> scan · ports<br><span class="k">Mode</span> Read-only, redacted</div>
+          </div>
+          <div>
+            <h3>From the terminal</h3>
+            <p>The same read-only tool works in a terminal. It ships inside the app at <code>HeatLens.app/Contents/Helpers/heatlens</code>; run a scan or list ports and get the same redacted report as text or JSON.</p>
+            <div class="sample"><code>heatlens scan --seconds 5</code><br><code>heatlens ports --json</code></div>
+          </div>
         </div>
       </div>
     </section>
@@ -323,6 +338,12 @@
             <summary>Does it run in the background?</summary>
             <div class="answer">
               <p>Only the menu-bar icon. HeatLens has no timers and no polling; the only work it ever does is a scan you started. Measured on the development Mac, the idle app sits at 0.0% CPU with no change in CPU time between samples, and about 18 MB of memory as reported by top. A scan costs about one second of CPU spread over its five to ten seconds. Launch at login is off by default.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Does connecting an AI agent send my data anywhere?</summary>
+            <div class="answer">
+              <p>HeatLens itself still makes no network connections; the MCP server runs on your Mac over standard input and output. But whatever the agent receives, it sends to its own model provider, as with anything else you show it. That's why the reports it gets are redacted: personal paths are replaced, and specific network addresses are left out. You choose whether to connect one, and you can remove it with <code>claude mcp remove heatlens</code>.</p>
             </div>
           </details>
           <details>

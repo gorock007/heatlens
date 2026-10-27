@@ -13,7 +13,6 @@ Usage band: amber (5h 58% used, 13:45)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-27 13:52 · opencode/default · term 587594cc-e865-455c-a748-35164496922a · handoffs/briefs/2026-10-27-1415-p7d-site-features.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
