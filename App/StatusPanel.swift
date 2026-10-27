@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The menu-bar thermometer and the panel it opens. The panel opens under the icon and closes
+/// The menu-bar rings and the panel they open. The panel opens under the icon and closes
 /// when the user clicks elsewhere; once dragged it's detached and floats until closed. Escape,
 /// or the icon, closes it. Holds no timers: everything here runs from a click, a key or a resize.
 @MainActor
@@ -18,10 +18,29 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         panel.delegate = self
         panel.onEscape = { [weak self] in self?.close() }
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "thermometer.medium", accessibilityDescription: "HeatLens")
+            button.image = Self.menuBarImage()
             button.target = self
             button.action = #selector(toggle)
         }
+    }
+
+    /// The app icon's rings, reduced to two rings and the core so they stay legible at menu-bar
+    /// size. A template image, so macOS tints it for light, dark and highlighted menu bars; drawn
+    /// in code so it's sharp at every scale. Like the icon, each ring drifts toward the core.
+    private static func menuBarImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { _ in
+            NSColor.black.set()
+            for (x, y, radius) in [(8.6, 8.6, 7.2), (9.6, 9.4, 4.4)] as [(CGFloat, CGFloat, CGFloat)] {
+                let ring = NSBezierPath(ovalIn: NSRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
+                ring.lineWidth = 1.5
+                ring.stroke()
+            }
+            NSBezierPath(ovalIn: NSRect(x: 10.6 - 1.9, y: 10.2 - 1.9, width: 3.8, height: 3.8)).fill()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "HeatLens"
+        return image
     }
 
     /// Opens the panel under the icon, as a click on it would.

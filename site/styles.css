@@ -400,9 +400,8 @@ section[id] { scroll-margin-top: 24px; }
   70%, 100% { opacity: 0; transform: scale(1.35); }
 }
 
-.mark { width: 17px; height: 17px; }
-.mark .tube { fill: none; stroke: currentColor; stroke-width: 1.6; }
-.mark .mercury { fill: var(--amber); stroke: var(--amber); }
+.mark { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.mark .core { fill: currentColor; stroke: none; }
 
 .demo-pop {
   position: absolute;
