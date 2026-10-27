@@ -7,12 +7,13 @@ stops, this file must hold everything a fresh session needs: `jarvis watch`
 may `/clear` Jarvis after a long idle.
 
 Jarvis session: cf788b09-038c-480c-b260-e01e536edeef
-Usage band: green (5h 4% used, 11:18)
+Usage band: green (5h 27% used, 12:22)
 
 ## Questions for the user
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
+- 2026-10-27 12:22 · codex/gpt-6-astra medium · term 0866db5b-55f2-49ad-ba91-c8c022c9ae71 · handoffs/briefs/2026-10-27-1330-p5c-site-icon.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
@@ -24,6 +25,6 @@ Usage band: green (5h 4% used, 11:18)
 - Phase 2 safety DONE: 2a/2b/2c/2d merged (d009384); review findings all fixed (#5: scripts/with-timeout.sh). Ruling: exclusion also suppresses stop. 2e docs merged (d7cd4bf): PERFORMANCE.md, SCENARIOS.md, samples/. PRD §11 definition of done met in code; scenarios 8 & 9 are manual-only (need the click-through).
 - Phase 3a click-through DONE (docs/CLICKTHROUGH.md): all 10 steps pass; scenarios 6/8/9/11 verified by hand. Remaining unverified: scenario 7 wording (needs a Mac without thermal info), Activity Monitor comparison (user). Driving trick: cua.getApp times out on LSUIElement apps; a CoreGraphics click on the status icon + System Events works.
 - v1.0.0 RELEASED 2026-10-27: https://github.com/gorock007/heatlens/releases/tag/v1.0.0 (notarized, DMG stapled, Gatekeeper accepted after a quarantined download via the site link). Site LIVE https://heatlens-app.vercel.app (Vercel project heatlens-app, scope gorock007s-projects, root dir site, git-connected; Vercel MCP cannot see this team, use `vercel api`). Notary profile `heatlens-notary` saved. MIT license.
-- v1.0.1 RELEASED 2026-10-27 (https://github.com/gorock007/heatlens/releases/tag/v1.0.1): app icon (5a, 61fe527), app + DMG both notarized and stapled, DMG volume icon (5b, 99d8f5d); site Download serves it. Open idea: use the new app icon on the site (header, favicon, og.png); not briefed yet, ask user.
+- v1.0.1 RELEASED 2026-10-27 (https://github.com/gorock007/heatlens/releases/tag/v1.0.1): app icon (5a, 61fe527), app + DMG both notarized and stapled, DMG volume icon (5b, 99d8f5d); site Download serves it. 5c site icon swap RUNNING (codex astra, user approved); on merge, push redeploys the site, then check live header, favicon and og.png.
 - Contributor guidance done (fc6df17): CLAUDE.md/AGENTS.md tell non-workflow agents to ignore handoffs/; README 'How this was built'. Ruling: Jarvis files stay public.
 - Release = `scripts/release.sh` then `gh release create` (docs/RELEASING.md). Remote: github.com/gorock007/heatlens (PUBLIC); branch tracks origin/main, push.default=upstream, commits use the noreply email.

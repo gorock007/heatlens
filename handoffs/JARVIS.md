@@ -15,6 +15,7 @@ Where the two disagree, this file wins.
   `Package.swift`, `project.yml`, `App/Info.plist`, `App/*.entitlements`, `Sources/HeatLensCore/Model/` (shared types)
 - **Never send to OpenCode's free models:** real process listings, `ps` output or scan reports from this Mac (they carry paths, usernames and argv), signing identities or certificates, and the safe-stop / PID-revalidation code (FR-09) — fixtures and synthetic snapshots only.
 
+- **`jarvis send` needs the full terminal id** (from OPEN.md's Running workers line); the 8-char short id fails with "Terminal session … is not active".
 - **Codex models on this account:** `gpt-5.6-sol` and `gpt-6-astra` work (astra probed 2026-10-27); `gpt-6.1-sol` is rejected (`model_not_found`, ChatGPT-plan account) even though Superset lists it.
 
 ## The loop
