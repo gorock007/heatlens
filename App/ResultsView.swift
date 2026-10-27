@@ -170,6 +170,10 @@ struct ResultsView: View {
                     }
                 }
 
+                if !report.projects.usages.isEmpty {
+                    ProjectsCard(breakdown: report.projects, groups: report.groups)
+                }
+
                 ResultSection(title: "Potential leftovers") {
                     if leftovers.isEmpty { EmptyNote("No long-running candidates found.") }
                     ForEach(leftovers) { finding in

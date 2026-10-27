@@ -13,6 +13,9 @@ struct LiveView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         LiveOverview(tick: tick)
+                        if !tick.projects.usages.isEmpty {
+                            ProjectsCard(breakdown: tick.projects, groups: tick.groups, limit: 4)
+                        }
                         TopList(title: "Top CPU", processes: tick.topByCPU, tick: tick, metric: .cpu)
                         TopList(title: "Top memory", processes: tick.topByMemory, tick: tick, metric: .memory)
                         HardwareCard(sample: tick.hardware)

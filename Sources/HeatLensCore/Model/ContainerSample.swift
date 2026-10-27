@@ -39,9 +39,13 @@ public struct ContainerSample: Identifiable, Hashable, Codable, Sendable {
     public let memoryBytes: UInt64?
     /// CPUs inside the Docker VM, for context ("of 6 VM CPUs"); not the host's cores.
     public let vmCPUCount: Int?
+    /// Host paths of `bind` mounts, from the container list (no inspect call). Evidence for
+    /// project attribution; volumes and the Docker socket are not included.
+    public let bindMountSources: [String]
 
     public init(containerID: String, name: String, image: String, state: String, status: String, createdAt: Date,
-                labels: [String: String], cpuPercentOfOneCore: Double?, memoryBytes: UInt64?, vmCPUCount: Int?) {
+                labels: [String: String], cpuPercentOfOneCore: Double?, memoryBytes: UInt64?, vmCPUCount: Int?,
+                bindMountSources: [String] = []) {
         self.containerID = containerID
         self.name = name
         self.image = image
@@ -52,6 +56,23 @@ public struct ContainerSample: Identifiable, Hashable, Codable, Sendable {
         self.cpuPercentOfOneCore = cpuPercentOfOneCore
         self.memoryBytes = memoryBytes
         self.vmCPUCount = vmCPUCount
+        self.bindMountSources = bindMountSources
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case containerID, name, image, state, status, createdAt, labels, cpuPercentOfOneCore, memoryBytes, vmCPUCount, bindMountSources
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(containerID: try c.decode(String.self, forKey: .containerID), name: try c.decode(String.self, forKey: .name),
+                  image: try c.decode(String.self, forKey: .image), state: try c.decode(String.self, forKey: .state),
+                  status: try c.decode(String.self, forKey: .status), createdAt: try c.decode(Date.self, forKey: .createdAt),
+                  labels: try c.decode([String: String].self, forKey: .labels),
+                  cpuPercentOfOneCore: try c.decodeIfPresent(Double.self, forKey: .cpuPercentOfOneCore),
+                  memoryBytes: try c.decodeIfPresent(UInt64.self, forKey: .memoryBytes),
+                  vmCPUCount: try c.decodeIfPresent(Int.self, forKey: .vmCPUCount),
+                  bindMountSources: try c.decodeIfPresent([String].self, forKey: .bindMountSources) ?? [])
     }
 
     public var shortID: String { String(containerID.prefix(12)) }

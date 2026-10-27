@@ -78,6 +78,11 @@ struct ProcessDetailView: View {
             Text("Project attribution")
                 .font(.subheadline.weight(.semibold))
             if let project {
+                if let repository = context.report.projects.usage(containing: identity)?.project {
+                    Text("\(repository.name) · \(ProjectFormat.path(repository.root)) (\(repository.basis))")
+                        .font(.caption)
+                        .textSelection(.enabled)
+                }
                 Text(project.directory)
                     .font(.caption)
                     .textSelection(.enabled)

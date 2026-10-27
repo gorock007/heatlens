@@ -38,7 +38,8 @@ final class LiveModel {
         let current = generation
         let options = settings.collectionOptions
         let configuration = LiveConfiguration(interval: settings.liveInterval, hardware: options.hardwareProvider,
-                                              docker: options.dockerSampler, userRules: options.userRules)
+                                              docker: options.dockerSampler, userRules: options.userRules,
+                                              projectLocator: .shared, projectMappings: options.projectMappings)
         state = .starting
         let monitor = self.monitor
         consumer = Task { [weak self] in

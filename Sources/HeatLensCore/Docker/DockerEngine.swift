@@ -154,7 +154,8 @@ public enum DockerAssembly {
                 createdAt: Date(timeIntervalSince1970: TimeInterval(summary.Created)),
                 labels: summary.Labels ?? [:],
                 cpuPercentOfOneCore: cpuPercent(before: then, after: now, elapsedNanoseconds: elapsed),
-                memoryBytes: now?.memoryBytes, vmCPUCount: now?.onlineCPUs
+                memoryBytes: now?.memoryBytes, vmCPUCount: now?.onlineCPUs,
+                bindMountSources: summary.bindSources
             )
         }
         .sorted { lhs, rhs in
@@ -306,8 +307,18 @@ struct DockerContainerSummary: Decodable, Sendable {
     let Status: String?
     let Created: Int64
     let Labels: [String: String]?
+    /// Only `Type` and `Source` are read, and only bind sources are kept.
+    let Mounts: [Mount]?
+
+    struct Mount: Decodable, Sendable {
+        let `Type`: String?
+        let Source: String?
+    }
 
     var shortID: String { String(Id.prefix(12)) }
+    var bindSources: [String] {
+        (Mounts ?? []).compactMap { $0.Type == "bind" ? $0.Source : nil }.filter { $0.hasPrefix("/") }
+    }
 }
 
 struct DockerStatsResponse: Decodable {

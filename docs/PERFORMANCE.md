@@ -104,6 +104,10 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
    5. Per-process CPU energy (brief 1h) reads `proc_pid_rusage` v6 instead of v4: the same call,
       a larger struct. Re-measured with energy on: `--live 60 --interval 5`, 62.8 s wall, 0.61 s
       CPU (1.0% of one core), median tick 85.5 ms, max 97.6 ms. No measurable change.
+   6. With the per-project breakdown (briefs 2a/2b): `--live 60 --interval 5`, 63.4 s wall, 0.73 s
+      CPU (1.15% of one core), median tick 97.4 ms, max 114.7 ms, max RSS 18.2 MB. The breakdown
+      itself is under 50 ms for 1,000 processes in 300 groups (a test); repository roots are
+      cached, so only new folders cost stats.
 
 ## 3. Snapshot cost
 

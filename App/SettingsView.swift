@@ -67,6 +67,21 @@ struct SettingsView: View {
                     }
                 }
 
+                VStack(alignment: .leading, spacing: 5) {
+                    ExclusionEditor(
+                        title: "Project folders",
+                        guidance: "Optional. One folder per line: ~/Developer/FDA = FDA. Work in that folder counts toward that project. Without a line, HeatLens uses the nearest Git repository.",
+                        text: $settings.projectMappingsText
+                    )
+                    let ignored = settings.ignoredMappingLines
+                    if !ignored.isEmpty {
+                        Text("Ignored: " + ignored.joined(separator: " · "))
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 ThermalAlertSection(settings: settings)
 
                 VStack(alignment: .leading, spacing: 4) {

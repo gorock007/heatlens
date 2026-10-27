@@ -16,10 +16,15 @@ struct FixtureScanService: ScanService {
             progress(min(TimeInterval(second), duration))
         }
         let report = Self.report(startedAt: startedAt, interval: duration, processClock: Self.processClock)
+        let docker = options.docker ? Self.docker : nil
+        // A locator that finds nothing: fixture paths are invented and must never be stat'ed.
+        let projects = ProjectAttributor.breakdown(snapshot: report.snapshot, groups: report.groups, docker: docker,
+                                                   mappings: options.projectMappings,
+                                                   locator: ProjectRootLocator(exists: { _ in false }))
         return ScanReport(snapshot: report.snapshot, groups: report.groups, findings: report.findings,
                           reportText: report.reportText, reportJSON: report.reportJSON,
                           hardware: options.hardwareSensors ? Self.hardware(at: startedAt) : Self.hardwareOff(at: startedAt),
-                          docker: options.docker ? Self.docker : nil)
+                          docker: docker, projects: projects)
     }
 
     /// Invented sensor values in the M3 Pro's range, for previews and `-HeatLensFixtures`.

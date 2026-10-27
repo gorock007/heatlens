@@ -9,6 +9,7 @@ struct CollectionOptions: Sendable {
     var hardwareSensors = false
     var docker = false
     var userRules: [WorkloadRule] = []
+    var projectMappings: [ProjectMapping] = []
 
     var hardwareProvider: any HardwareSensorProviding {
         hardwareSensors ? SMCSensorProvider() : DisabledHardwareProvider()
@@ -31,6 +32,7 @@ final class SettingsModel {
         static let hardwareSensorsEnabled = "hardwareSensorsEnabled"
         static let dockerEnabled = "dockerEnabled"
         static let customLabels = "customLabels"
+        static let projectMappings = "projectMappings"
         static let liveInterval = "liveInterval"
     }
 
@@ -66,6 +68,10 @@ final class SettingsModel {
     var customLabels: String {
         didSet { defaults.set(customLabels, forKey: Key.customLabels) }
     }
+    /// `path = Name` lines; see `ProjectMapping.parse`.
+    var projectMappingsText: String {
+        didSet { defaults.set(projectMappingsText, forKey: Key.projectMappings) }
+    }
     /// Live refresh interval: 2, 5 or 10 s.
     var liveInterval: TimeInterval {
         didSet { defaults.set(liveInterval, forKey: Key.liveInterval) }
@@ -90,6 +96,7 @@ final class SettingsModel {
         hardwareSensorsEnabled = defaults.object(forKey: Key.hardwareSensorsEnabled) as? Bool ?? true
         dockerEnabled = defaults.bool(forKey: Key.dockerEnabled)
         customLabels = defaults.string(forKey: Key.customLabels) ?? ""
+        projectMappingsText = defaults.string(forKey: Key.projectMappings) ?? ""
         let storedInterval = defaults.double(forKey: Key.liveInterval)
         liveInterval = LiveConfiguration.intervals.contains(storedInterval) ? storedInterval : 5
         refreshLaunchAtLoginStatus()
@@ -99,10 +106,13 @@ final class SettingsModel {
     var excludedProjectPrefixes: [String] { lines(in: excludedProjects) }
     var workloadRules: [WorkloadRule] { WorkloadRule.parse(customLabels).rules }
     var ignoredLabelLines: [String] { WorkloadRule.parse(customLabels).ignored }
+    var projectMappings: [ProjectMapping] { ProjectMapping.parse(projectMappingsText).mappings }
+    var ignoredMappingLines: [String] { ProjectMapping.parse(projectMappingsText).invalid }
 
     /// What a scan or live session reads besides processes, from the switches above.
     var collectionOptions: CollectionOptions {
-        CollectionOptions(hardwareSensors: hardwareSensorsEnabled, docker: dockerEnabled, userRules: workloadRules)
+        CollectionOptions(hardwareSensors: hardwareSensorsEnabled, docker: dockerEnabled, userRules: workloadRules,
+                          projectMappings: projectMappings)
     }
 
     var exclusions: ExclusionFilter {

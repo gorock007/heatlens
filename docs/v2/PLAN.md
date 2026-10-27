@@ -109,10 +109,23 @@ Dependency order: 1a → (1b, 1c, 1d in any order) → 1e → 1f → 1g.
 
 Next-step brief: [PHASE-1-REPORT.md § Next](PHASE-1-REPORT.md#next-phase-2-brief).
 
-- 2a Project roots: stat-only walk to a `.git`/`package.json` root; Compose `working_dir` and bind
-  mounts → project; user mappings; an "Unattributed" bucket.
-- 2b Per-project aggregation. Container CPU is shown as a breakdown of the Docker VM process,
-  never added to it (test).
+### 2a · Project roots and container attribution ✅ (ADR-0004)
+- **Did:** `ProjectRootLocator` (stat-only, protected folders skipped, cached), `ProjectMapping`
+  ("Project folders" in Settings), `ProjectAttributor.attribute` for containers (user mapping,
+  Compose `working_dir`, `config_files`, bind mounts into one project, else Unattributed with
+  the reason). Bind mounts come from the container list: no new Docker endpoint.
+- **Accepted:** tests per evidence type, the FDA container maps to `~/Developer/FDA`, live test
+  against Docker and against this checkout's `.git`.
+
+### 2b · Per-project aggregation ✅
+- **Did:** `ProjectAttributor.breakdown`: rows per project, then Docker VM, then Unattributed.
+  Container CPU moves from the VM row to its project; container memory is shown, never added.
+  A Projects card in Live and scan results; process detail names the repository.
+- **Accepted:** VM + containers test where the rows add up to the host total; over-attribution
+  clamps at 0 with a notice; no VM → containers kept out of totals; Docker off; two VMs; 1,000
+  processes under 50 ms. Live cost 1.15% of one core at 5 s.
+- **Not yet driven in the app:** the Projects card (the screen was locked during the click-through).
+
 - 2c History store: system `libsqlite3`, a high-resolution window plus a rollup, retention setting,
   "Delete history".
 - 2d Timeline view: thermal, CPU, swap, container starts, test runs.

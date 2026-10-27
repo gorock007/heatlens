@@ -41,3 +41,14 @@
     (about 2 W below macmon's CPU power under load on the M3 Pro, about a third of it at idle).
     It is CPU energy only, not GPU. A process that ran under 1 ms of CPU and reports no energy shows
     "Unavailable", not 0 W.
+17. Projects come from the nearest Git repository (or manifest) above a process's folder, found
+    by checking which files exist, never by reading them. Folders macOS guards with a privacy
+    prompt (Desktop, Documents, Downloads, iCloud Drive, other volumes) are never searched, so
+    work there is grouped by its folder, not its repository. Add a line under Settings →
+    Project folders to name it.
+18. Containers are tied to projects only by Compose's working-directory or config-file labels,
+    or by bind mounts into a single project. Others are listed under the Docker VM row as
+    unattributed. Container CPU comes from Docker's stats, read at slightly different moments
+    from the host's, so the Docker VM row is an estimate and never shown below 0.
+19. HeatLens recognises Docker Desktop's VM by its process name. Any other app's
+    Virtualization VM running at the same time is counted in the same row (a notice says so).

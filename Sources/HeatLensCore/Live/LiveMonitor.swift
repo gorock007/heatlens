@@ -18,10 +18,15 @@ public struct LiveConfiguration: Sendable {
     public var historyCapacity: Int
     /// Processes per top list, each with a trend.
     public var topCount: Int
+    /// Finds repository roots for the per-project breakdown; nil leaves `LiveTick.projects` empty.
+    /// One locator per app, so its cache spans sessions.
+    public var projectLocator: ProjectRootLocator?
+    public var projectMappings: [ProjectMapping]
 
     public init(interval: TimeInterval = 5, hardware: any HardwareSensorProviding = DisabledHardwareProvider(),
                 docker: any DockerSampling = DisabledDockerSampler(), userRules: [WorkloadRule] = [],
-                autoPauseAfter: TimeInterval = 15 * 60, historyCapacity: Int = 150, topCount: Int = 12) {
+                autoPauseAfter: TimeInterval = 15 * 60, historyCapacity: Int = 150, topCount: Int = 12,
+                projectLocator: ProjectRootLocator? = nil, projectMappings: [ProjectMapping] = []) {
         self.interval = Self.clamped(interval)
         self.hardware = hardware
         self.docker = docker
@@ -29,6 +34,8 @@ public struct LiveConfiguration: Sendable {
         self.autoPauseAfter = autoPauseAfter
         self.historyCapacity = max(2, historyCapacity)
         self.topCount = max(1, topCount)
+        self.projectLocator = projectLocator
+        self.projectMappings = projectMappings
     }
 
     static func clamped(_ interval: TimeInterval) -> TimeInterval {
@@ -45,6 +52,8 @@ public struct LiveTick: Sendable {
     public let groups: [ProcessGroup]
     public let hardware: HardwareSample
     public let docker: DockerSnapshot
+    /// CPU and memory per project, the Docker VM's remainder and Unattributed (brief 2b).
+    public let projects: ProjectBreakdown
     /// Busiest processes by CPU over the interval, then by memory footprint (RSS when no footprint).
     public let topByCPU: [ProcessSample]
     public let topByMemory: [ProcessSample]
@@ -173,8 +182,12 @@ public actor LiveMonitor {
                 history.append(snapshot, hardware: hardware)
                 let (byCPU, byMemory) = Self.topLists(snapshot.processes, count: configuration.topCount)
                 sequence += 1
+                let projects = configuration.projectLocator.map {
+                    ProjectAttributor.breakdown(snapshot: snapshot, groups: groups, docker: docker,
+                                                mappings: configuration.projectMappings, locator: $0)
+                } ?? .empty
                 let tick = LiveTick(sequence: sequence, snapshot: snapshot, groups: groups, hardware: hardware, docker: docker,
-                                    topByCPU: byCPU, topByMemory: byMemory,
+                                    projects: projects, topByCPU: byCPU, topByMemory: byMemory,
                                     history: history.window(for: Set((byCPU + byMemory).map(\.identity))),
                                     collectionSeconds: Self.seconds(began.duration(to: .now)))
                 emit(.tick(tick), session: id)

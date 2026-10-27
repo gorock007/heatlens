@@ -6,7 +6,7 @@ import HeatLensCore
 func runLive(seconds: TimeInterval, interval: TimeInterval) async {
     let monitor = LiveMonitor()
     let configuration = LiveConfiguration(interval: interval, hardware: SMCSensorProvider(), docker: DockerEngineSampler(),
-                                          autoPauseAfter: seconds)
+                                          autoPauseAfter: seconds, projectLocator: ProjectRootLocator())
     var costs: [TimeInterval] = []
     for await event in await monitor.start(configuration) {
         switch event {
@@ -18,6 +18,12 @@ func runLive(seconds: TimeInterval, interval: TimeInterval) async {
             print(String(format: "tick %3d · %4d processes · %3d groups · host %4.1f%% · CPU %@ · energy %@ · system %@ · %d containers · cost %.1f ms",
                          tick.sequence, tick.snapshot.processes.count, tick.groups.count, tick.snapshot.system.hostBusyFraction * 100,
                          temperature, energy, system, tick.docker.containers.count, tick.collectionSeconds * 1000))
+            // Project names are folder names; the probe never prints their paths.
+            let projects = tick.projects.usages.prefix(6).map { usage in
+                String(format: "%@ %.0f%%%@", usage.name, usage.totalCPUPercent,
+                       usage.containers.isEmpty ? "" : " (\(usage.containers.count) containers)")
+            }
+            print("  projects: " + projects.joined(separator: " · "))
         case .autoPaused:
             print("auto-paused after \(Int(seconds)) s")
         case .failed(let message):
