@@ -13,15 +13,15 @@ Usage band: amber (5h 58% used, 13:45)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
+- 2026-10-27 13:52 · opencode/default · term 587594cc-e865-455c-a748-35164496922a · handoffs/briefs/2026-10-27-1415-p7d-site-features.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
 ## Waiting on Jarvis
-- 6a panel: user confirmed drag + Escape 2026-10-27. Still unconfirmed: physical icon click toggles closed (no flicker/reopen).
 <!-- - handoff to review: handoffs/<file>.md · migration to apply · release to cut -->
 
 ## To-do
-- 7a (0d9ec2b), 8a ports (aaef6bf), 7b bundle/connect (f7424e8) MERGED. CLI ships at HeatLens.app/Contents/Helpers/heatlens (MacOS/heatlens collides with HeatLens on case-insensitive APFS). 7c running (cap text report). After 7c: Jarvis bumps to 1.1.0 (heatlensVersion in Sources/HeatLensCLI/Arguments.swift + MARKETING_VERSION/CURRENT_PROJECT_VERSION in project.yml), real-identity release.sh + notarize (first build with nested helper: check notarytool log if rejected), gh release, site feature lines.
+- v1.1.0 RELEASED 2026-10-27 (https://github.com/gorock007/heatlens/releases/tag/v1.1.0): movable panel (6a), ports (8a), heatlens CLI/MCP bundled at Contents/Helpers/heatlens + Settings connect (7a/7b), report cap (7c). Notarization accepted the nested helper. Site download auto-serves it (releases/latest). 7d site copy running on OpenCode; Vercel deploys on push.
 - Feature backlog (user-approved list, not yet picked): sleep blockers, thermal alert (event-driven), agent awareness, before/after, global hotkey, stop project leftovers. AI ruling: explain + propose typed actions only; no free-form command execution; CLI/MCP read-only.
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
 - Phase 2 safety DONE: 2a/2b/2c/2d merged (d009384); review findings all fixed (#5: scripts/with-timeout.sh). Ruling: exclusion also suppresses stop. 2e docs merged (d7cd4bf): PERFORMANCE.md, SCENARIOS.md, samples/. PRD §11 definition of done met in code; scenarios 8 & 9 are manual-only (need the click-through).
