@@ -11,26 +11,31 @@ public enum ScanError: Error, Equatable {
 ///
 /// A scan reads host counters, every process (libproc), and, when libproc refused some
 /// processes, one `ps` run; waits out the interval reporting progress about once a second;
-/// then repeats those reads plus memory/thermal state. `ScanAssembly` turns the two ends into
-/// per-process deltas.
+/// then repeats those reads plus memory/thermal state, and lists the TCP ports the processes
+/// listen on (once, at the end). `ScanAssembly` turns the two ends into per-process deltas.
 public actor ScanCoordinator {
     public static let durationRange: ClosedRange<TimeInterval> = 1...15
 
     private let processSampler: any ProcessSampling
     private let systemSampler: any SystemSampling
     private let fallbackSampler: PSTimeSampler
+    private let portSampler: any PortSampling
     private var isScanning = false
 
     public init(processSampler: some ProcessSampling = LibprocProcessSampler(),
-                systemSampler: some SystemSampling = HostSystemSampler()) {
-        self.init(processSampler: processSampler, systemSampler: systemSampler, fallbackSampler: PSTimeSampler())
+                systemSampler: some SystemSampling = HostSystemSampler(),
+                portSampler: some PortSampling = LibprocPortSampler()) {
+        self.init(processSampler: processSampler, systemSampler: systemSampler, fallbackSampler: PSTimeSampler(),
+                  portSampler: portSampler)
     }
 
     /// Tests inject a `PSTimeSampler` that runs a slow executable or reports its child PIDs.
-    init(processSampler: any ProcessSampling, systemSampler: any SystemSampling, fallbackSampler: PSTimeSampler) {
+    init(processSampler: any ProcessSampling, systemSampler: any SystemSampling, fallbackSampler: PSTimeSampler,
+         portSampler: any PortSampling = LibprocPortSampler()) {
         self.processSampler = processSampler
         self.systemSampler = systemSampler
         self.fallbackSampler = fallbackSampler
+        self.portSampler = portSampler
     }
 
     /// duration clamped to 1...15 s (PRD offers 5/10/15). progress is called about once a second with elapsed seconds.
@@ -66,10 +71,11 @@ public actor ScanCoordinator {
         }
         let state = try await systemSampler.state()
         try Task.checkCancellation()
+        let ports = portSampler.listeningPorts(of: after.processes)
 
         return ScanAssembly.snapshot(startedAt: startedAt, before: before, after: after,
                                      psBefore: psBefore, psAfter: psAfter, psFailure: psFailure,
-                                     hostBefore: hostBefore, hostAfter: hostAfter, state: state)
+                                     hostBefore: hostBefore, hostAfter: hostAfter, state: state, ports: ports)
     }
 
     static func clampedDuration(_ duration: TimeInterval) throws -> TimeInterval {

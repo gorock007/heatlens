@@ -49,6 +49,10 @@ struct ProcessDetailView: View {
             row("Executable", process?.executablePath ?? Format.notAccessible)
             row("Command", Format.command(process?.arguments) ?? Format.notAccessible)
             row("Directory", process?.currentDirectory ?? Format.notAccessible)
+            let ports = context.report.snapshot.ports(for: identity)
+            if !ports.isEmpty {
+                row("Listening on", ports.map { ":\($0.port) (\($0.scopeLabel))" }.joined(separator: ", "))
+            }
             if process?.detailAccess == .processExited {
                 row("Status", Format.exited)
             } else {

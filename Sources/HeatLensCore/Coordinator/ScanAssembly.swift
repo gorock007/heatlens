@@ -13,6 +13,8 @@ import Foundation
 ///   out for 2 s of a 5 s scan reads ~100 %, not 40 %).
 /// - Processes libproc refused get CPU and RSS from the two `ps` runs (`measurementSource = .ps`)
 ///   and keep `detailAccess = .permissionDenied`, since argv, cwd and footprint stay unreadable.
+/// - Listening ports come from one read at the end of the scan, so they belong to the second
+///   reading's identities; a process that exited before that read has none.
 enum ScanAssembly {
     /// Shortest lifetime a born-mid-scan percentage is divided by, so a process seen a few
     /// milliseconds after birth does not read as thousands of percent.
@@ -20,7 +22,8 @@ enum ScanAssembly {
 
     static func snapshot(startedAt: Date, before: ProcessCounters, after: ProcessCounters,
                          psBefore: PSTimeSampler.Reading?, psAfter: PSTimeSampler.Reading?, psFailure: String?,
-                         hostBefore: HostCounters, hostAfter: HostCounters, state: HostState) -> ScanSnapshot {
+                         hostBefore: HostCounters, hostAfter: HostCounters, state: HostState,
+                         ports: PortReading? = nil) -> ScanSnapshot {
         let elapsed = after.monotonicNanoseconds > before.monotonicNanoseconds
             ? after.monotonicNanoseconds - before.monotonicNanoseconds : 0
         var psElapsed: UInt64 = 0
@@ -78,8 +81,16 @@ enum ScanAssembly {
         let system = systemSample(hostBefore: hostBefore, hostAfter: hostAfter, state: state)
         let notices = notices(samples: samples, exitedCount: exitedCount, psFailure: psFailure,
                               elapsed: elapsed, hostBefore: hostBefore, hostAfter: hostAfter, system: system, state: state)
+            + portNotices(ports)
+        let known = Set(samples.filter { $0.detailAccess != .processExited }.map(\.identity))
         return ScanSnapshot(startedAt: startedAt, interval: TimeInterval(elapsed) / 1e9, system: system,
-                            processes: samples, notices: notices)
+                            processes: samples, notices: notices,
+                            listeningPorts: ports?.ports.filter { known.contains($0.identity) } ?? [])
+    }
+
+    static func portNotices(_ ports: PortReading?) -> [String] {
+        guard let ports, ports.refusedCount > 0 else { return [] }
+        return ["Listening ports of \(ports.refusedCount) root/other-user processes are not visible."]
     }
 
     private static func sample(_ r: ProcessReading, cpu: CPUTime?, over window: UInt64, residentBytes: UInt64? = nil,

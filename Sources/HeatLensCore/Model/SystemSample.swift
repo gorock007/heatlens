@@ -87,14 +87,30 @@ public struct ScanSnapshot: Identifiable, Hashable, Codable, Sendable {
     public let processes: [ProcessSample]
     /// Data-quality notices for the overview ("CPU for root processes unavailable", …).
     public let notices: [String]
+    /// TCP ports in LISTEN state, read once at the end of the scan; only processes with at least
+    /// one port appear. Empty for snapshots (and JSON) from before ports were sampled.
+    public let listeningPorts: [ProcessListeningPorts]
 
     public init(id: UUID = UUID(), startedAt: Date, interval: TimeInterval, system: SystemSample,
-                processes: [ProcessSample], notices: [String]) {
+                processes: [ProcessSample], notices: [String], listeningPorts: [ProcessListeningPorts] = []) {
         self.id = id
         self.startedAt = startedAt
         self.interval = interval
         self.system = system
         self.processes = processes
         self.notices = notices
+        self.listeningPorts = listeningPorts
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, startedAt, interval, system, processes, notices, listeningPorts
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(UUID.self, forKey: .id), startedAt: try c.decode(Date.self, forKey: .startedAt),
+                  interval: try c.decode(TimeInterval.self, forKey: .interval), system: try c.decode(SystemSample.self, forKey: .system),
+                  processes: try c.decode([ProcessSample].self, forKey: .processes), notices: try c.decode([String].self, forKey: .notices),
+                  listeningPorts: try c.decodeIfPresent([ProcessListeningPorts].self, forKey: .listeningPorts) ?? [])
     }
 }

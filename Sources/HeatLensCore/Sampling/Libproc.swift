@@ -127,6 +127,31 @@ enum Libproc {
         return .success(parsed)
     }
 
+    /// The pid's socket file descriptors (`PROC_PIDLISTFDS`, keeping `PROX_FDTYPE_SOCKET`).
+    /// EPERM for other users' and root's processes.
+    static func socketFDs(_ pid: pid_t) -> Result<[Int32], Failure> {
+        let entry = MemoryLayout<proc_fdinfo>.stride
+        errno = 0
+        let needed = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard needed > 0 else { return .failure(Failure(code: errno)) }
+        // Room for a few descriptors opened between the two calls.
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(needed) / entry + 16)
+        errno = 0
+        let n = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, Int32(fds.count * entry))
+        guard n > 0 else { return .failure(Failure(code: errno)) }
+        return .success(fds.prefix(Int(n) / entry).filter { $0.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) }.map(\.proc_fd))
+    }
+
+    /// `PROC_PIDFDSOCKETINFO` for one descriptor; fails when it was closed in the meantime.
+    static func socketInfo(_ pid: pid_t, fd: Int32) -> Result<socket_fdinfo, Failure> {
+        var info = socket_fdinfo()
+        let size = Int32(MemoryLayout<socket_fdinfo>.size)
+        errno = 0
+        let n = proc_pidfdinfo(pid, fd, PROC_PIDFDSOCKETINFO, &info, size)
+        guard n == size else { return .failure(Failure(code: errno)) }
+        return .success(info)
+    }
+
     /// `kinfo_proc` for every process via sysctl, the facility `ps` uses.
     static func kinfoAll() -> [pid_t: KInfo] {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]

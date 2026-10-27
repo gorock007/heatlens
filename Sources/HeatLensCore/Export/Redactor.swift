@@ -46,6 +46,13 @@ public enum Redactor {
             lines.append("  Limitations: \(finding.limitations.joined(separator: "; "))")
         }
 
+        lines.append("Listening ports:")
+        if report.listeningPorts.isEmpty { lines.append("- none") }
+        for listing in report.listeningPorts {
+            let project = listing.projectDirectory.map { "project \(($0 as NSString).lastPathComponent)" } ?? "Unknown project"
+            lines.append("- :\(listing.port) (\(listing.scope)) — \(listing.processName), PID \(listing.pid), \(project)")
+        }
+
         lines.append("Processes (top \(processLimit) by CPU, plus any named in a finding):")
         if listed.isEmpty { lines.append("- none") }
         for process in listed {
@@ -82,6 +89,19 @@ private struct RedactedReport: Codable {
     let processes: [RedactedProcess]
     let groups: [RedactedGroup]
     let findings: [RedactedFinding]
+    let listeningPorts: [RedactedPort]
+}
+
+/// A specific bind address (a LAN or VPN IP) is left out; the scope says one was used.
+private struct RedactedPort: Codable {
+    let port: UInt16
+    let family: String
+    /// "loopback", "all interfaces" or "specific address".
+    let scope: String
+    let pid: Int32
+    let processName: String
+    let groupLabel: String?
+    let projectDirectory: String?
 }
 
 private struct RedactedProcess: Codable {
@@ -198,8 +218,27 @@ private extension Redactor {
                     affectedPIDs: finding.affectedProcesses.map(\.pid),
                     recommendedActions: finding.recommendedActions.map { sanitizer.action($0) }
                 )
+            },
+            listeningPorts: PortListing.listings(snapshot, groups: groups).map { listing in
+                RedactedPort(
+                    port: listing.port.port,
+                    family: listing.port.family.rawValue,
+                    scope: scopeText(listing.port.scope),
+                    pid: listing.identity.pid,
+                    processName: sanitizer.text(listing.processName),
+                    groupLabel: listing.group.map { sanitizer.text($0.label) },
+                    projectDirectory: listing.group?.project.map { sanitizer.text($0.directory) }
+                )
             }
         )
+    }
+
+    static func scopeText(_ scope: BindScope) -> String {
+        switch scope {
+        case .loopback: "loopback"
+        case .allInterfaces: "all interfaces"
+        case .specificAddress: "specific address"
+        }
     }
 }
 

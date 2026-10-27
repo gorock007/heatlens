@@ -75,6 +75,24 @@ print("processes: \(processes.count) · own \(count { $0.owner == .currentUser }
 print("\nnotices:")
 for notice in snapshot.notices { print("  - " + notice) }
 
+let byIdentity = Dictionary(processes.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
+print("\nlistening ports (\(snapshot.listeningPorts.reduce(0) { $0 + $1.ports.count })):")
+for entry in snapshot.listeningPorts {
+    for port in entry.ports {
+        let scope = port.scope == .specificAddress ? (port.address ?? "specific address") : port.scope.rawValue
+        print("  :\(port.port) (\(scope), \(port.family.rawValue)) · \(byIdentity[entry.identity]?.name ?? "?") · PID \(entry.identity.pid)")
+    }
+}
+do {
+    // The coordinator's port read happens inside the scan; time the same read once more on its own.
+    let readings = try LibprocProcessSampler().snapshot().processes
+    let timing = LibprocPortSampler().listeningPorts(of: readings)
+    print(String(format: "port sampling: %.1f ms for %d processes (%d skipped as other users')",
+                 Double(timing.elapsedNanoseconds) / 1e6, readings.count, timing.refusedCount))
+} catch {
+    print("port sampling timing failed: \(error)")
+}
+
 print("\ntop \(topN) by CPU (100% = one core):")
 print(pad("pid", 7) + pad("cpu%", 8, right: true) + pad("src", 8, right: true) + pad("rss", 10, right: true) + pad("footprint", 11, right: true) + pad("thr", 5, right: true) + "  " + pad("owner", 6) + pad("age", 8) + "name · path")
 let ownerLabel: [ProcessOwner: String] = [.currentUser: "own", .root: "root", .otherUser: "other", .unknown: "?"]

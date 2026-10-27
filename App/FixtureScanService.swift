@@ -17,7 +17,8 @@ struct FixtureScanService: ScanService {
     static func report(startedAt: Date, interval: TimeInterval) -> ScanReport {
         let fixture = Fixture(now: startedAt)
         let snapshot = ScanSnapshot(startedAt: startedAt, interval: interval, system: fixture.system,
-                                    processes: fixture.processes, notices: fixture.notices)
+                                    processes: fixture.processes, notices: fixture.notices,
+                                    listeningPorts: fixture.listeningPorts)
         return ScanReport(ScanResult(snapshot: snapshot, groups: fixture.groups, findings: fixture.findings))
     }
 }
@@ -91,6 +92,19 @@ private struct Fixture {
         [browser, opencode, opencodeWorker, nextServer, nextDev, npm, worker, windowServer]
     }
 
+    // MARK: Ports
+
+    var listeningPorts: [ProcessListeningPorts] {
+        [
+            ProcessListeningPorts(identity: opencode.identity,
+                                  ports: [ListeningPort(port: 4096, family: .ipv4, scope: .loopback)]),
+            ProcessListeningPorts(identity: nextServer.identity,
+                                  ports: [ListeningPort(port: 3000, family: .dual, scope: .allInterfaces)]),
+            ProcessListeningPorts(identity: worker.identity,
+                                  ports: [ListeningPort(port: 8787, family: .ipv4, scope: .loopback)]),
+        ]
+    }
+
     // MARK: System
 
     var system: SystemSample {
@@ -109,6 +123,7 @@ private struct Fixture {
         [
             "CPU and memory of root and other users' processes (such as WindowServer) are not accessible.",
             "Readable processes account for about half of the measured host load.",
+            "Listening ports of 1 root/other-user processes are not visible.",
         ]
     }
 
@@ -153,6 +168,7 @@ private struct Fixture {
                     Evidence(label: "CPU in sample", value: "44.0% of one core (2 processes)", source: "proc_pid_rusage"),
                     Evidence(label: "Working directory", value: "~/Projects/jarvis-demo", source: "cwd"),
                     Evidence(label: "Command", value: "opencode run <prompt>", source: "argv"),
+                    Evidence(label: "Listening on", value: ":4096", source: "proc_pidfdinfo"),
                 ],
                 limitations: [
                     "Project attribution comes from the working directory, not from reading project files.",
@@ -186,6 +202,7 @@ private struct Fixture {
                     Evidence(label: "Elapsed", value: "2d 5h", source: "proc_pidinfo"),
                     Evidence(label: "CPU in sample", value: "0.0% of one core", source: "proc_pid_rusage"),
                     Evidence(label: "Script", value: "~/Projects/demo-site/scripts/worker.js", source: "argv"),
+                    Evidence(label: "Listening on", value: ":8787", source: "proc_pidfdinfo"),
                 ],
                 limitations: ["This does not prove it is unused."],
                 affectedProcesses: [worker.identity],
@@ -200,6 +217,7 @@ private struct Fixture {
                     Evidence(label: "Command", value: "npm run dev → next dev → next-server", source: "argv"),
                     Evidence(label: "Elapsed", value: "1d 14h", source: "proc_pidinfo"),
                     Evidence(label: "Memory", value: "810 MB across 3 processes", source: "proc_pid_rusage"),
+                    Evidence(label: "Listening on", value: ":3000", source: "proc_pidfdinfo"),
                 ],
                 limitations: ["You may still be using this server in a browser tab."],
                 affectedProcesses: [npm.identity, nextDev.identity, nextServer.identity],

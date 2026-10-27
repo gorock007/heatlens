@@ -55,6 +55,12 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
    two runs) gave 6.02–6.04 s wall, 0.96 s user + 0.07–0.08 s system CPU, 21 MB max RSS and
    13.5 MB peak footprint: about 1.0 s of CPU per 5 s scan.
 
+5. **Listening ports** (2026-10-27): reading every readable process's TCP listeners once, at
+   the end of the scan, took 3.4–9.3 ms for about 690 processes in the release build (3 runs) and
+   11–22 ms in the debug build (2 runs). That is well under the 150 ms limit, so the work is not
+   capped. Measured with `.build/release/heatlens-probe --no-fixtures --duration 1`, which times
+   the same read on its own (its `port sampling:` line).
+
 ## 3. Snapshot cost
 
 No test or probe output prints the cost of building a snapshot, rules and report on their own,

@@ -63,6 +63,7 @@ public struct RulesEngine: Sendable {
             let samples = group.members.compactMap { processes[$0] }
             let cpu = samples.compactMap(\.cpuPercentOfOneCore).reduce(0, +)
             let uptime = samples.map { $0.identity.uptime(at: evaluatedAt) }.max() ?? 0
+            let ports = portEvidence(snapshot.portNumbers(for: group.members))
 
             if cpu >= thresholds.mediumCPUPercent {
                 let severity: Severity = cpu >= thresholds.highCPUPercent ? .high : .medium
@@ -76,7 +77,7 @@ public struct RulesEngine: Sendable {
                     severity: severity,
                     confidence: .high,
                     explanation: explanation,
-                    evidence: group.evidence + [Evidence(label: "Group CPU", value: formatPercent(cpu), source: "sample interval delta")],
+                    evidence: group.evidence + [Evidence(label: "Group CPU", value: formatPercent(cpu), source: "sample interval delta")] + ports,
                     limitations: ["High CPU can be useful work; this finding does not mean the process is unwanted."],
                     group: group,
                     samples: samples,
@@ -92,7 +93,7 @@ public struct RulesEngine: Sendable {
                     severity: .review,
                     confidence: .medium,
                     explanation: "This \(group.kind) group has been running for \(formatDuration(uptime)) and used only \(formatPercent(cpu)) during the scan, so it may be a leftover rather than a current heat source.",
-                    evidence: group.evidence + uptimeEvidence(uptime) + [Evidence(label: "Group CPU", value: formatPercent(cpu), source: "sample interval delta")],
+                    evidence: group.evidence + uptimeEvidence(uptime) + [Evidence(label: "Group CPU", value: formatPercent(cpu), source: "sample interval delta")] + ports,
                     limitations: ["This server may be intentionally always-on."],
                     group: group,
                     samples: samples,
@@ -115,7 +116,7 @@ public struct RulesEngine: Sendable {
                         Evidence(label: "Parent PID", value: "1", source: "process sample"),
                         Evidence(label: "Uptime", value: formatDuration(uptime), source: "process start time"),
                         Evidence(label: "Group CPU", value: formatPercent(cpu), source: "sample interval delta"),
-                    ],
+                    ] + ports,
                     limitations: ["PPID 1 is a clue, not proof.", "This does not prove it is unused."],
                     group: group,
                     samples: samples,
@@ -359,6 +360,12 @@ private extension RulesEngine {
         let executable = URL(fileURLWithPath: root.executablePath ?? root.name).lastPathComponent.lowercased()
         guard executable.hasPrefix("python") else { return false }
         return root.arguments?.dropFirst().contains(where: { $0.lowercased().hasSuffix(".py") }) == true
+    }
+
+    /// "Listening on :3000, :9229" for a group whose members hold TCP listeners; empty otherwise.
+    func portEvidence(_ ports: [UInt16]) -> [Evidence] {
+        guard !ports.isEmpty else { return [] }
+        return [Evidence(label: "Listening on", value: ports.map { ":\($0)" }.joined(separator: ", "), source: "proc_pidfdinfo")]
     }
 
     func uptimeEvidence(_ uptime: TimeInterval) -> [Evidence] {

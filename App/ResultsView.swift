@@ -8,12 +8,15 @@ struct ReportContext {
     let observedAt: Date
     /// Findings the user's exclusions hide (Settings).
     let hiddenFindingIDs: Set<UUID>
+    /// Every listening port with its process and group, sorted by port.
+    let portListings: [PortListing]
 
     init(report: ScanReport, hiddenFindingIDs: Set<UUID> = []) {
         self.report = report
         self.hiddenFindingIDs = hiddenFindingIDs
         processes = Dictionary(report.snapshot.processes.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
         observedAt = report.snapshot.startedAt.addingTimeInterval(report.snapshot.interval)
+        portListings = PortListing.listings(report.snapshot, groups: report.groups)
     }
 
     func uptime(_ identity: ProcessIdentity) -> String {
@@ -133,6 +136,12 @@ struct ResultsView: View {
                     ForEach(leftovers) {
                         FindingCard(finding: $0, context: context, stopService: stopService,
                                     onInspect: { selectedProcess = $0 }, onRequestStop: { stopTarget = $0 })
+                    }
+                }
+
+                if !context.portListings.isEmpty {
+                    ResultSection(title: "Ports") {
+                        PortList(listings: context.portListings) { selectedProcess = $0 }
                     }
                 }
 
@@ -386,6 +395,69 @@ private struct GroupList: View {
                 Button("Show fewer groups") { expanded = false }
                     .controlSize(.small)
             }
+        }
+    }
+}
+
+private struct PortList: View {
+    let listings: [PortListing]
+    let onInspect: (ProcessIdentity) -> Void
+
+    static let collapsedCount = 6
+    @State private var expanded = false
+
+    private var shown: [PortListing] { expanded ? listings : Array(listings.prefix(Self.collapsedCount)) }
+
+    var body: some View {
+        ForEach(shown) { listing in
+            // The whole row inspects, like a group's member rows; the trailing word says so.
+            Button { onInspect(listing.identity) } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(verbatim: ":\(listing.port.port)")
+                        .font(.callout.monospacedDigit().weight(.medium))
+                        .frame(width: 46, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(verbatim: "\(listing.processName) · PID \(listing.identity.pid)")
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                        Text(verbatim: detail(listing))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text("Inspect")
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Inspect process")
+        }
+        if listings.count > Self.collapsedCount {
+            Button(expanded ? "Show fewer ports" : "Show all \(listings.count) ports") { expanded.toggle() }
+                .controlSize(.small)
+        }
+    }
+
+    private func detail(_ listing: PortListing) -> String {
+        var parts = [listing.port.scopeLabel]
+        if let group = listing.group {
+            parts.append(group.label)
+            if let project = group.project { parts.append((project.directory as NSString).lastPathComponent) }
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension ListeningPort {
+    /// "loopback", "all interfaces", or the specific address it is bound to.
+    var scopeLabel: String {
+        switch scope {
+        case .loopback: "loopback"
+        case .allInterfaces: "all interfaces"
+        case .specificAddress: address ?? "specific address"
         }
     }
 }
