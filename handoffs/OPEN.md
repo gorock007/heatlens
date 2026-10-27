@@ -17,6 +17,8 @@ Usage band: amber (5h 37% used, 12:36)
 <!-- `jarvis merge` removes the line -->
 
 ## Waiting on Jarvis
+- User to verify 6a panel (98e38fd) with a PHYSICAL click on the menu-bar icon: worker only tested via AX press (menu-bar manager hid the icon). Risk: an attached panel's resign-key close racing the icon toggle (closes, then reopens).
+- User to pick next features from the list given 2026-10-27: heatlens CLI/MCP server (Jarvis's pick), ports owner, sleep blockers, thermal alert (event-driven), agent awareness, before/after, global hotkey, stop project leftovers. AI ruling proposed: explain + propose typed actions only, no free-form command execution.
 <!-- - handoff to review: handoffs/<file>.md · migration to apply · release to cut -->
 
 ## To-do
