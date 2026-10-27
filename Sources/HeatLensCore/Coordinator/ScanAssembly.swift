@@ -11,6 +11,8 @@ import Foundation
 ///   its whole cumulative CPU, all of which fell inside the window, as `cpu`, and
 ///   `cpuPercentOfOneCore` over its own lifetime in the window (so a compiler that ran flat
 ///   out for 2 s of a 5 s scan reads ~100 %, not 40 %).
+/// - CPU energy (`cpuWatts`) follows the libproc CPU delta over the same window. ps has no
+///   energy, so root/other-user processes have none.
 /// - Processes libproc refused get CPU and RSS from the two `ps` runs (`measurementSource = .ps`)
 ///   and keep `detailAccess = .permissionDenied`, since argv, cwd and footprint stay unreadable.
 /// - Listening ports and power assertions come from one read each at the end of the scan, so
@@ -41,7 +43,8 @@ enum ScanAssembly {
             if let earlier = beforeByPID[pid], earlier.identity == reading.identity {
                 survivors.insert(reading.identity)
                 if let a = earlier.cpu, let b = reading.cpu, let delta = CPUMath.delta(before: a, after: b) {
-                    samples.append(sample(reading, cpu: delta, over: elapsed, source: .libproc))
+                    let energy = CPUMath.energyDelta(before: earlier.energyNanojoules, after: reading.energyNanojoules)
+                    samples.append(sample(reading, cpu: delta, over: elapsed, source: .libproc, energy: energy))
                 } else if reading.detailAccess == .permissionDenied, psElapsed > 0,
                           let a = psBefore?.rows[pid], let b = psAfter?.rows[pid], b.cpuNanoseconds >= a.cpuNanoseconds {
                     let delta = CPUTime(userNanoseconds: b.cpuNanoseconds - a.cpuNanoseconds, systemNanoseconds: 0)
@@ -54,7 +57,7 @@ enum ScanAssembly {
                 let lifetime = UInt64(max(0, after.wallClock.timeIntervalSince(reading.identity.startDate)) * 1e9)
                 let window = min(max(lifetime, minimumLifetimeNanoseconds), max(elapsed, minimumLifetimeNanoseconds))
                 if let cpu = reading.cpu {
-                    samples.append(sample(reading, cpu: cpu, over: window, source: .libproc))
+                    samples.append(sample(reading, cpu: cpu, over: window, source: .libproc, energy: reading.energyNanojoules))
                 } else if reading.detailAccess == .permissionDenied, let row = psAfter?.rows[pid] {
                     samples.append(sample(reading, cpu: CPUTime(userNanoseconds: row.cpuNanoseconds, systemNanoseconds: 0),
                                           over: window, residentBytes: row.residentBytes, source: .ps))
@@ -137,15 +140,18 @@ enum ScanAssembly {
     }
 
     private static func sample(_ r: ProcessReading, cpu: CPUTime?, over window: UInt64, residentBytes: UInt64? = nil,
-                               source: MeasurementSource?) -> ProcessSample {
+                               source: MeasurementSource?, energy: UInt64? = nil) -> ProcessSample {
         let rss = residentBytes ?? r.residentBytes
+        // Same window as the CPU percentage; nil watts (a counter that stood still) drops the energy too.
+        let watts = cpu.flatMap { CPUMath.watts(energyNanojoules: energy, cpu: $0, elapsedNanoseconds: window) }
         return ProcessSample(identity: r.identity, parentPID: r.parentPID, owner: r.owner, name: r.name,
                       executablePath: r.executablePath, arguments: r.arguments, currentDirectory: r.currentDirectory,
                       cpu: cpu,
                       cpuPercentOfOneCore: cpu.map { CPUMath.percentOfOneCore(cpuNanoseconds: $0.totalNanoseconds, elapsedNanoseconds: window) },
                       residentBytes: rss, footprintBytes: r.footprintBytes,
                       threadCount: r.threadCount, detailAccess: r.detailAccess,
-                      measurementSource: cpu == nil && rss == nil ? nil : (source ?? .libproc))
+                      measurementSource: cpu == nil && rss == nil ? nil : (source ?? .libproc),
+                      cpuWatts: watts, cpuEnergyNanojoules: watts == nil ? nil : energy)
     }
 
     private static func hostDeltas(_ before: HostCounters, _ after: HostCounters) -> [CPULoadTicks]? {

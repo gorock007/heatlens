@@ -6,8 +6,8 @@
    may not be visible.
 3. `kernel_task` has no numbers. It reports no CPU or memory figures to HeatLens, only its name
    and owning user.
-4. Temperatures, fans and system power appear only when "Hardware sensors" is turned on in
-   Settings. They come from the SMC, an undocumented interface, and may stop working after a
+4. Temperatures, fans and system power come from the SMC, an undocumented interface. "Hardware
+   sensors" is on by default and can be turned off in Settings. The readings may stop working after a
    macOS update; HeatLens then shows "Unavailable". The values are averages and maxima of SMC
    sensor families whose meanings are community-documented, not Apple's. "Hottest" is the
    hottest sensor read, not a measured die hotspot. Verified on one M3 Pro only
@@ -19,8 +19,9 @@
    footprint, and no `proc_listallpids`. HeatLens ships unsandboxed for this reason.
 8. Flags such as "possible leftover" are not proof. They are review candidates based on
    evidence, and a process may be intentional or doing useful work.
-9. CPU and GPU power are always "Unavailable". On macOS 27 they need per-firmware energy-counter
-   tables (docs/v2/ADR-0001). System power (SMC `PSTR`) is shown instead.
+9. Whole-chip CPU and GPU power are always "Unavailable". On macOS 27 they need per-firmware
+   energy-counter tables (docs/v2/ADR-0001). System power (SMC `PSTR`) is shown instead, and
+   "CPU energy" per process (item 16).
 10. Live mode doesn't sample CPU for root and other-user processes, because it never runs `ps`.
     Scan now still includes them.
 11. Live mode keeps at most 150 updates of trend history in memory and forgets them when it
@@ -34,4 +35,9 @@
     macOS user services, not with the browser. Chromium-based browsers and Firefox group correctly.
 15. Custom labels match a process name, executable or argument token exactly (case-insensitive).
     They never apply to root, other-user or protected system processes.
-
+16. "CPU energy" comes from macOS's per-process energy counter (`proc_pid_rusage`, a public API).
+    It covers your own processes only: root and system processes, `kernel_task` and the CPU's
+    shared power aren't readable, so the total in Live mode sits below the CPU's real power
+    (about 2 W below macmon's CPU power under load on the M3 Pro, about a third of it at idle).
+    It is CPU energy only, not GPU. A process that ran under 1 ms of CPU and reports no energy shows
+    "Unavailable", not 0 W.

@@ -16,7 +16,8 @@ enum SyntheticSnapshots {
         arguments: [String]? = nil,
         currentDirectory: String? = nil,
         cpu: Double? = 0,
-        detailAccess: DetailAccess = .available
+        detailAccess: DetailAccess = .available,
+        cpuWatts: Double? = nil
     ) -> ProcessSample {
         let observedAt = startedAt.addingTimeInterval(interval)
         let startMicros = Int64(observedAt.addingTimeInterval(-ageHours * 3_600).timeIntervalSince1970 * 1_000_000)
@@ -33,7 +34,9 @@ enum SyntheticSnapshots {
             residentBytes: 64 << 20,
             footprintBytes: 96 << 20,
             threadCount: 6,
-            detailAccess: detailAccess
+            detailAccess: detailAccess,
+            cpuWatts: cpuWatts,
+            cpuEnergyNanojoules: cpuWatts.map { UInt64($0 * interval * 1e9) }
         )
     }
 

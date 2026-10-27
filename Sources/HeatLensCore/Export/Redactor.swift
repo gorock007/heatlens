@@ -67,7 +67,8 @@ public enum Redactor {
         if listed.isEmpty { lines.append("- none") }
         for process in listed {
             let command = process.arguments.map { truncated($0.joined(separator: " "), to: textArgvLimit) } ?? "Unavailable"
-            lines.append("- PID \(process.pid) \(process.name); CPU \(process.cpuPercent.map { String(format: "%.1f%%", $0) } ?? "Unavailable"); cwd \(process.currentDirectory ?? "Unavailable"); argv \(command)")
+            let energy = process.cpuWatts.map { String(format: " (%.2f W)", $0) } ?? ""
+            lines.append("- PID \(process.pid) \(process.name); CPU \(process.cpuPercent.map { String(format: "%.1f%%", $0) } ?? "Unavailable")\(energy); cwd \(process.currentDirectory ?? "Unavailable"); argv \(command)")
         }
         if listed.count < report.processes.count {
             lines.append("\(report.processes.count - listed.count) other processes omitted; Copy JSON for the full list")
@@ -257,6 +258,8 @@ private struct RedactedProcess: Codable {
     let arguments: [String]?
     let currentDirectory: String?
     let cpuPercent: Double?
+    /// CPU energy over the interval (kernel per-task counter); own processes only.
+    let cpuWatts: Double?
     let residentBytes: UInt64?
     let footprintBytes: UInt64?
     let detailAccess: String
@@ -328,6 +331,7 @@ private extension Redactor {
                     arguments: sanitizer.arguments(process.arguments),
                     currentDirectory: process.currentDirectory.map(sanitizer.text),
                     cpuPercent: process.cpuPercentOfOneCore,
+                    cpuWatts: process.cpuWatts,
                     residentBytes: process.residentBytes,
                     footprintBytes: process.footprintBytes,
                     detailAccess: process.detailAccess.rawValue

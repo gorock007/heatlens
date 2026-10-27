@@ -62,6 +62,8 @@ struct ProcessDetailView: View {
                 row("Status", Format.exited)
             } else {
                 row("CPU", Format.cpu(process?.cpuPercentOfOneCore) + sourceSuffix)
+                row("CPU energy", Format.watts(process?.cpuWatts)
+                    ?? (process?.owner == .currentUser ? "Unavailable" : "Not accessible (only your own processes report energy)"))
                 row("Memory", Format.bytes(process?.footprintBytes ?? process?.residentBytes) + sourceSuffix)
             }
         }

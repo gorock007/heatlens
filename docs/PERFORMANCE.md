@@ -101,6 +101,9 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
       (docs/CLICKTHROUGH.md L4, L8).
    4. A tick's per-tick wall time includes the Docker socket round trips (about 15 ms) and the
       SMC read (about 15 ms). The rest is the process list, grouping and the trend ring.
+   5. Per-process CPU energy (brief 1h) reads `proc_pid_rusage` v6 instead of v4: the same call,
+      a larger struct. Re-measured with energy on: `--live 60 --interval 5`, 62.8 s wall, 0.61 s
+      CPU (1.0% of one core), median tick 85.5 ms, max 97.6 ms. No measurable change.
 
 ## 3. Snapshot cost
 

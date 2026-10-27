@@ -33,6 +33,8 @@ enum Libproc {
         let userTicks: UInt64
         let systemTicks: UInt64
         let physFootprint: UInt64
+        /// Cumulative CPU energy in nanojoules (`ri_energy_nj`, rusage v6); nil when only v4 answered.
+        let energyNanojoules: UInt64?
     }
 
     /// `kinfo_proc` fields, available for every process including the ones libproc refuses.
@@ -85,15 +87,27 @@ enum Libproc {
                                  residentSize: ti.pti_resident_size, threads: ti.pti_threadnum))
     }
 
-    static func rusageV4(_ pid: pid_t) -> Result<RusageInfo, Failure> {
-        var ru = rusage_info_v4()
+    /// `proc_pid_rusage` v6, which adds the kernel's per-task CPU energy counter. Falls back to v4
+    /// (no energy) if a kernel refuses v6 with EINVAL.
+    static func rusage(_ pid: pid_t) -> Result<RusageInfo, Failure> {
+        var ru = rusage_info_v6()
         errno = 0
         let r = withUnsafeMutablePointer(to: &ru) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V6, $0) }
+        }
+        if r == 0 {
+            return .success(RusageInfo(userTicks: ru.ri_user_time, systemTicks: ru.ri_system_time,
+                                       physFootprint: ru.ri_phys_footprint, energyNanojoules: ru.ri_energy_nj))
+        }
+        guard errno == EINVAL else { return .failure(Failure(code: errno)) }
+        var v4 = rusage_info_v4()
+        errno = 0
+        let r4 = withUnsafeMutablePointer(to: &v4) {
             $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
         }
-        guard r == 0 else { return .failure(Failure(code: errno)) }
-        return .success(RusageInfo(userTicks: ru.ri_user_time, systemTicks: ru.ri_system_time,
-                                   physFootprint: ru.ri_phys_footprint))
+        guard r4 == 0 else { return .failure(Failure(code: errno)) }
+        return .success(RusageInfo(userTicks: v4.ri_user_time, systemTicks: v4.ri_system_time,
+                                   physFootprint: v4.ri_phys_footprint, energyNanojoules: nil))
     }
 
     /// Works for every owner. `PROC_PIDPATHINFO_MAXSIZE` is not importable; it is 4 * MAXPATHLEN.

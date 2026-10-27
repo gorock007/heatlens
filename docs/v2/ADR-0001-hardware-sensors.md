@@ -111,10 +111,34 @@ UI therefore says "SMC sensor reading" and never "CPU temperature is".
 - Inputs are fixed four-character key names from a compiled-in list, or names enumerated from
   the SMC itself. Nothing from users, processes or the network reaches the call.
 
+## Addendum, 2026-10-27: per-process CPU energy; sensors on by default
+
+**Owner decision** after Phase 1: don't bundle macmon. Instead:
+
+1. **Per-process CPU energy** from `proc_pid_rusage(pid, RUSAGE_INFO_V6)`, field `ri_energy_nj`.
+   This is a public libproc API (in the SDK's `libproc.h` and `sys/resource.h`), needs no
+   privilege, and reads every process of the current user. It falls back to v4 (no energy) if a
+   kernel refuses v6. `ScanAssembly` turns two readings into watts over the same window as the
+   CPU percentage; group and total figures add up energy and divide by the whole interval.
+   - Evidence, this M3 Pro: a 2 s busy loop in one thread read 6.5 J (3.3 W). 552 of 744 processes
+     were readable; the 191 refused are root and other users'.
+   - Against macmon 0.10.0 `cpu_power`, side by side: two `yes` processes raised the sum of
+     per-process energy by 6.3 W and macmon by 6.4 W; three raised both by about 9 W. Under
+     load the sum sat about 2 W below macmon (root processes, `kernel_task` and shared cluster
+     power aren't per-process). At idle on battery it read 0.4–0.6 W against macmon's 1.2–1.7 W.
+   - Not checked against `powermetrics` (root). The UI says "CPU energy · your processes" and
+     never calls it the CPU's power.
+2. **Whole-chip CPU/GPU power stays "Unavailable"** (decision 3 above is unchanged). Bundling
+   macmon is no longer planned. Revisit only if users ask for a GPU power figure.
+3. **Hardware sensors are on by default** from v2.0 (this replaces decision 5's default). An
+   explicit "off" saved in Settings is kept. The switch, the orange "SMC · private interface"
+   badge and the never-zero rule are unchanged. Docker stays opt-in (PRD-v2 §5 "opt-in
+   detection"), with a "Show Docker containers" button in Live mode.
+
 ## Revisit when
 
-- The owner wants CPU/GPU power. The next step is option B: a pinned macmon release built from
-  source in `release.sh`, invoked only with `pipe`, MIT notice in the About box, its own brief and
-  security review.
+- The owner wants whole-chip GPU power. The next step would be option B: a pinned macmon release
+  built from source in `release.sh`, invoked only with `pipe`, MIT notice in the About box, its
+  own brief and security review. Per-process CPU energy (addendum) covers the CPU side.
 - A macOS update changes SMC behaviour. The struct-layout and live tests catch it.
 - Apple ships a public thermal or energy API.

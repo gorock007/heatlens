@@ -16,7 +16,11 @@ struct LiveView: View {
                         TopList(title: "Top CPU", processes: tick.topByCPU, tick: tick, metric: .cpu)
                         TopList(title: "Top memory", processes: tick.topByMemory, tick: tick, metric: .memory)
                         HardwareCard(sample: tick.hardware)
-                        DockerCard(snapshot: tick.docker.availability == .disabled ? nil : tick.docker)
+                        DockerCard(snapshot: tick.docker.availability == .disabled ? nil : tick.docker) {
+                            // Same switch as Settings; restart so the session picks it up.
+                            model.settings.dockerEnabled = true
+                            if model.isRunning { model.start() }
+                        }
                         ForEach(tick.snapshot.notices, id: \.self) { notice in
                             Label(notice, systemImage: "info.circle")
                                 .font(.caption)
@@ -30,7 +34,7 @@ struct LiveView: View {
             } else {
                 Text(model.isRunning
                      ? "Measuring…"
-                     : "Live mode refreshes CPU, memory and, if turned on in Settings, hardware sensors and Docker while this panel is open. Nothing runs until you press Start.")
+                     : "Live mode refreshes CPU, energy, memory and hardware sensors while this panel is open, and Docker if you turn it on. Nothing runs until you press Start.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -109,6 +113,11 @@ private struct LiveOverview: View {
                     }
                 }
                 GridRow {
+                    Text("CPU energy").foregroundStyle(.secondary)
+                    Text(Format.watts(tick.snapshot.measuredCPUWatts).map { "\($0) · your processes" } ?? "Unavailable")
+                        .help("From macOS's per-process energy counters. Root and system processes aren't readable, so this is below the CPU's total power.")
+                }
+                GridRow {
                     Text("Memory pressure").foregroundStyle(.secondary)
                     Text(Format.pressure(system.memory.pressure))
                 }
@@ -155,9 +164,16 @@ private struct TopList: View {
                     Spacer()
                     Sparkline(values: series(process))
                         .frame(width: 44, height: 14)
-                    Text(value(process))
-                        .font(.caption.monospacedDigit())
-                        .frame(width: 58, alignment: .trailing)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text(value(process))
+                            .font(.caption.monospacedDigit())
+                        if metric == .cpu, let watts = Format.watts(process.cpuWatts) {
+                            Text(watts)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(width: 58, alignment: .trailing)
                 }
             }
         }

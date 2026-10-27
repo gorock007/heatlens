@@ -5,8 +5,9 @@ Source: [`docs/PRD-v2.md`](../PRD-v2.md). Audit: [GAP-ANALYSIS.md](GAP-ANALYSIS.
 (Docker), [ADR-0003](ADR-0003-live-monitoring-and-transport.md) (live mode, no local server).
 
 Each brief is small, ends with green `swift build && swift test` plus `scripts/run-app.sh
---build-only`, and can be reverted alone. New behaviour stays behind a Settings switch that
-defaults to off, or a button the user presses. v1.2.1 behaviour is unchanged until the user opts in.
+--build-only`, and can be reverted alone. New behaviour stays behind a Settings switch or a button
+the user presses. The switches default to off, except hardware sensors (on from v2.0, owner
+decision; see below).
 
 ## Phase 0 — audit and spike ✅
 
@@ -87,6 +88,17 @@ Dependency order: 1a → (1b, 1c, 1d in any order) → 1e → 1f → 1g.
   stopping is back to 0 % (measured).
 - **Rollback:** the switches stay off; reverting the UI files restores v1.2.1.
 
+### 1h · Per-process CPU energy; sensors on by default ✅
+- **Do:** read `ri_energy_nj` with `proc_pid_rusage` v6 (public). `ProcessSample.cpuWatts` and
+  `cpuEnergyNanojoules`, group and total figures averaged over the whole interval. Show it in
+  Live (overview total, under each Top CPU figure), scan group rows, process detail, the
+  high-CPU finding's evidence and both reports. Hardware sensors on by default; a "Show Docker
+  containers" button in Live mode. ADR-0001 addendum.
+- **Accept:** watts maths and never-zero rules; assembly windows (survivor, born mid-scan, ps,
+  exited); totals don't overcount births; finding evidence and report text/JSON; old JSON still
+  decodes; live tests on this Mac. Cross-checked against macmon. Overhead unchanged.
+- **Rollback:** revert the commit; the sensor default is one line in `SettingsModel`.
+
 ### 1g · Phase 1 acceptance ✅
 - **Do:** update LIMITATIONS.md, PERFORMANCE.md and COMPATIBILITY.md. Write a changelog entry and a
   Phase 2 brief.
@@ -121,10 +133,9 @@ Next-step brief: [PHASE-1-REPORT.md § Next](PHASE-1-REPORT.md#next-phase-2-brie
 LaunchAgent helper with XPC (new ADR), adaptive sampling, watchlists, incident export, structured
 logs, crash recovery, Jarvis integration through the existing stdio MCP server.
 
-## Open decisions for the owner
+## Owner decisions (2026-10-27)
 
-1. **CPU/GPU power.** Phase 1 shows "Unavailable". Getting it means bundling a pinned macmon
-   build (Rust in the release pipeline, a third-party binary in the notarized app). See ADR-0001
-   "Revisit when".
-2. **Defaults.** Hardware sensors and Docker are off by default to keep v1's promises. They could
-   be on by default from v2.0 instead.
+1. **CPU/GPU power.** Don't bundle macmon. Per-process CPU energy from a public API instead
+   (brief 1h); whole-chip CPU/GPU power stays "Unavailable". ADR-0001 addendum.
+2. **Defaults.** Hardware sensors on by default from v2.0. Docker stays opt-in, one tap away in
+   Live mode.

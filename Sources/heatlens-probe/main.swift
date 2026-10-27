@@ -98,6 +98,7 @@ print("thermal: \(system.thermalState.rawValue) · pmset limits: \(limits.isEmpt
 let processes = snapshot.processes
 func count(_ predicate: (ProcessSample) -> Bool) -> Int { processes.filter(predicate).count }
 print("processes: \(processes.count) · own \(count { $0.owner == .currentUser }) · root \(count { $0.owner == .root }) · other \(count { $0.owner == .otherUser }) · CPU from libproc \(count { $0.cpu != nil && $0.measurementSource == .libproc }) · from ps \(count { $0.cpu != nil && $0.measurementSource == .ps }) · exited \(count { $0.detailAccess == .processExited })")
+print("CPU energy of readable processes: \(snapshot.measuredCPUWatts.map { String(format: "%.2f W", $0) } ?? "unavailable")")
 print("\nnotices:")
 for notice in snapshot.notices { print("  - " + notice) }
 
@@ -140,11 +141,12 @@ do {
 }
 
 print("\ntop \(topN) by CPU (100% = one core):")
-print(pad("pid", 7) + pad("cpu%", 8, right: true) + pad("src", 8, right: true) + pad("rss", 10, right: true) + pad("footprint", 11, right: true) + pad("thr", 5, right: true) + "  " + pad("owner", 6) + pad("age", 8) + "name · path")
+print(pad("pid", 7) + pad("cpu%", 8, right: true) + pad("W", 7, right: true) + pad("src", 8, right: true) + pad("rss", 10, right: true) + pad("footprint", 11, right: true) + pad("thr", 5, right: true) + "  " + pad("owner", 6) + pad("age", 8) + "name · path")
 let ownerLabel: [ProcessOwner: String] = [.currentUser: "own", .root: "root", .otherUser: "other", .unknown: "?"]
 for p in processes.filter({ $0.cpuPercentOfOneCore != nil }).sorted(by: { $0.cpuPercentOfOneCore! > $1.cpuPercentOfOneCore! }).prefix(topN) {
     let fixture = p.pid == fixtures.busyPID ? "  (fixture)" : ""
     print(pad("\(p.pid)", 7) + pad(String(format: "%.1f", p.cpuPercentOfOneCore!), 8, right: true)
+          + pad(p.cpuWatts.map { String(format: "%.2f", $0) } ?? "-", 7, right: true)
           + pad(p.measurementSource?.rawValue ?? "-", 8, right: true) + pad(p.residentBytes.map(fmtBytes) ?? "n/a", 10, right: true)
           + pad(p.footprintBytes.map(fmtBytes) ?? "n/a", 11, right: true) + pad(p.threadCount.map { "\($0)" } ?? "", 5, right: true)
           + "  " + pad(ownerLabel[p.owner] ?? "?", 6) + pad(fmtDuration(p.identity.uptime()), 8)

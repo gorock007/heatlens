@@ -18,6 +18,13 @@ enum Format {
 
     static let exited = "Exited during scan"
 
+    /// CPU energy over the interval: "3.1 W", "12 W", "<0.1 W". nil stays nil so callers can omit it.
+    static func watts(_ watts: Double?) -> String? {
+        guard let watts else { return nil }
+        if watts > 0 && watts < 0.05 { return "<0.1 W" }
+        return watts >= 10 ? "\(Int(watts.rounded())) W" : String(format: "%.1f W", watts)
+    }
+
     /// CPU and memory for one process row: "Exited during scan" when it vanished mid-scan, and a
     /// "via ps" note when the numbers came from ps rather than libproc.
     static func measurement(_ sample: ProcessSample?) -> String {

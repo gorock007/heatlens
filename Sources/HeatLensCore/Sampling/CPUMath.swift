@@ -106,6 +106,30 @@ public enum CPUMath {
         return Double(cpuNanoseconds) / Double(elapsedNanoseconds) * 100
     }
 
+    /// CPU time below which a zero energy delta is believable (the process barely ran).
+    static let minimumCPUForEnergyNanoseconds: UInt64 = 1_000_000
+
+    /// Average power in watts (nanojoules per nanosecond) from two readings of the per-task
+    /// energy counter. nil when either reading is missing, the counter went backwards, nothing
+    /// elapsed, or it stood still while the process used at least 1 ms of CPU (a kernel or VM
+    /// without the counter reports zeros, and zero would be a made-up reading).
+    public static func watts(energyBefore: UInt64?, energyAfter: UInt64?, cpu: CPUTime, elapsedNanoseconds: UInt64) -> Double? {
+        watts(energyNanojoules: energyDelta(before: energyBefore, after: energyAfter), cpu: cpu, elapsedNanoseconds: elapsedNanoseconds)
+    }
+
+    /// Energy used between two readings; nil when either is missing or the counter went backwards.
+    public static func energyDelta(before: UInt64?, after: UInt64?) -> UInt64? {
+        guard let before, let after, after >= before else { return nil }
+        return after - before
+    }
+
+    /// Same, for energy already known to fall inside the window (a process born mid-scan).
+    public static func watts(energyNanojoules: UInt64?, cpu: CPUTime, elapsedNanoseconds: UInt64) -> Double? {
+        guard let energyNanojoules, elapsedNanoseconds > 0 else { return nil }
+        if energyNanojoules == 0, cpu.totalNanoseconds >= minimumCPUForEnergyNanoseconds { return nil }
+        return Double(energyNanojoules) / Double(elapsedNanoseconds)
+    }
+
     /// Share of the whole machine, 0...100 across `coreCount` cores.
     public static func percentOfMachine(cpuNanoseconds: UInt64, elapsedNanoseconds: UInt64, coreCount: Int) -> Double {
         guard coreCount > 0 else { return 0 }

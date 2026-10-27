@@ -99,7 +99,10 @@ private struct Fixture {
                              residentBytes: megabytes.map { $0 * Self.mib },
                              footprintBytes: megabytes.map { $0 * Self.mib * 9 / 10 },
                              threadCount: owner == .currentUser ? 12 : nil,
-                             detailAccess: owner == .currentUser ? .available : .permissionDenied)
+                             detailAccess: owner == .currentUser ? .available : .permissionDenied,
+                             // About 3 W per busy core, as measured on an M3 Pro P-core.
+                             cpuWatts: owner == .currentUser ? cpuPercent.map { $0 / 100 * 3 } : nil,
+                             cpuEnergyNanojoules: owner == .currentUser ? cpuPercent.map { UInt64($0 / 100 * 3 * 10e9) } : nil)
     }
 
     // MARK: Processes

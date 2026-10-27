@@ -48,11 +48,20 @@ public struct ProcessSample: Identifiable, Hashable, Codable, Sendable {
     public let detailAccess: DetailAccess
     /// nil when there are no CPU/RSS figures (or for samples built before this field existed).
     public let measurementSource: MeasurementSource?
+    /// Average CPU power over the interval in watts, from the kernel's per-task energy counter
+    /// (`proc_pid_rusage` v6, a public API). Own processes only: nil for root/other-user processes
+    /// (ps has no energy), exited ones, and samples built before this field existed.
+    public let cpuWatts: Double?
+    /// The CPU energy behind `cpuWatts`, in nanojoules, all inside the interval. Totals add this up
+    /// and divide by the whole interval: adding watts would overcount a process born mid-interval,
+    /// whose watts are over its own shorter lifetime.
+    public let cpuEnergyNanojoules: UInt64?
 
     public init(identity: ProcessIdentity, parentPID: Int32, owner: ProcessOwner, name: String,
                 executablePath: String?, arguments: [String]?, currentDirectory: String?,
                 cpu: CPUTime?, cpuPercentOfOneCore: Double?, residentBytes: UInt64?, footprintBytes: UInt64?,
-                threadCount: Int?, detailAccess: DetailAccess, measurementSource: MeasurementSource? = nil) {
+                threadCount: Int?, detailAccess: DetailAccess, measurementSource: MeasurementSource? = nil,
+                cpuWatts: Double? = nil, cpuEnergyNanojoules: UInt64? = nil) {
         self.identity = identity
         self.parentPID = parentPID
         self.owner = owner
@@ -67,9 +76,30 @@ public struct ProcessSample: Identifiable, Hashable, Codable, Sendable {
         self.threadCount = threadCount
         self.detailAccess = detailAccess
         self.measurementSource = measurementSource
+        self.cpuWatts = cpuWatts
+        self.cpuEnergyNanojoules = cpuEnergyNanojoules
     }
 
     public var pid: Int32 { identity.pid }
     /// PPID 1 is an orphan/detached *clue*, not proof of a leak (PRD §4.2).
     public var isAdoptedByLaunchd: Bool { parentPID == 1 }
+}
+
+public extension ScanSnapshot {
+    /// Average CPU power of `identities` over the whole interval, in watts; nil when none of them
+    /// has a reading, so a group of root processes says "unavailable" rather than 0 W.
+    func cpuWatts(for identities: [ProcessIdentity]) -> Double? {
+        let wanted = Set(identities)
+        return averageWatts(processes.filter { wanted.contains($0.identity) })
+    }
+
+    /// The same for every process with a reading: the processes HeatLens can read (your own), not
+    /// the whole CPU. nil when no process had one.
+    var measuredCPUWatts: Double? { averageWatts(processes) }
+
+    private func averageWatts(_ samples: [ProcessSample]) -> Double? {
+        let energies = samples.compactMap(\.cpuEnergyNanojoules)
+        guard !energies.isEmpty, interval > 0 else { return nil }
+        return Double(energies.reduce(0, +)) / (interval * 1e9)
+    }
 }

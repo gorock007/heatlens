@@ -53,8 +53,8 @@ final class SettingsModel {
     var globalHotkeyEnabled: Bool {
         didSet { defaults.set(globalHotkeyEnabled, forKey: Key.globalHotkeyEnabled) }
     }
-    /// Opt-in, off by default: temperatures, fans and system power from the SMC, a private macOS
-    /// interface (docs/v2/ADR-0001).
+    /// On by default from v2.0 (docs/v2/ADR-0001, owner decision 2026-10-27): temperatures, fans and
+    /// system power from the SMC, a private macOS interface, read-only. An explicit "off" is kept.
     var hardwareSensorsEnabled: Bool {
         didSet { defaults.set(hardwareSensorsEnabled, forKey: Key.hardwareSensorsEnabled) }
     }
@@ -87,7 +87,7 @@ final class SettingsModel {
         excludedProjects = defaults.string(forKey: Key.excludedProjects) ?? ""
         thermalAlertsEnabled = defaults.bool(forKey: Key.thermalAlertsEnabled)
         globalHotkeyEnabled = defaults.bool(forKey: Key.globalHotkeyEnabled)
-        hardwareSensorsEnabled = defaults.bool(forKey: Key.hardwareSensorsEnabled)
+        hardwareSensorsEnabled = defaults.object(forKey: Key.hardwareSensorsEnabled) as? Bool ?? true
         dockerEnabled = defaults.bool(forKey: Key.dockerEnabled)
         customLabels = defaults.string(forKey: Key.customLabels) ?? ""
         let storedInterval = defaults.double(forKey: Key.liveInterval)

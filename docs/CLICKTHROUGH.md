@@ -118,6 +118,19 @@ actions. Settings were restored afterwards with `defaults delete` of the two new
 | L9 | Scan now with sensors on: results show the Hardware sensors card under Overview | pass |
 | L10 | Quit HeatLens exits; no process left | pass |
 
+Brief 1h, same method, Debug build, on battery, with no sensor or Docker key stored (a fresh
+install):
+
+| Step | Check | Result |
+|---|---|---|
+| L11 | Idle Live text names energy and sensors; Docker "if you turn it on" | pass |
+| L12 | Sensors on by default: the hardware card shows CPU 51 °C avg / 64 °C hottest, fans, system power 6.6 W, with no setting stored | pass |
+| L13 | Overview "CPU energy 0.8 W · your processes"; each Top CPU row shows watts under its CPU figure (`0.1 W`, `<0.1 W`) | pass |
+| L14 | Docker card "Off" with "Show Docker containers": pressing it stores `dockerEnabled = 1`, restarts Live, and lists `fda-db-1` | pass |
+| L15 | Scan now: group rows read "40% CPU (of one core) · 0.1 W · 28 processes" | pass |
+
+`dockerEnabled` was deleted afterwards. Not driven: the process detail "CPU energy" row.
+
 Not driven by hand: the 15-minute auto-pause, Refresh now, the interval picker during a session
 and Custom labels. Each is covered by a unit test (`LiveMonitorTests`, `WorkloadHeuristicsTests`).
 

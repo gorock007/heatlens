@@ -694,7 +694,9 @@ private struct GroupRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(group.label)
                     .font(.callout)
-                Text("\(Format.cpu(metrics.hasMeasuredCPU ? metrics.cpu : nil)) · \(group.members.count) process\(group.members.count == 1 ? "" : "es")")
+                Text(([Format.cpu(metrics.hasMeasuredCPU ? metrics.cpu : nil),
+                       Format.watts(context.report.snapshot.cpuWatts(for: group.members))].compactMap { $0 }
+                      + ["\(group.members.count) process\(group.members.count == 1 ? "" : "es")"]).joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

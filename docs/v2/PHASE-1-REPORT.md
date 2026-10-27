@@ -42,6 +42,12 @@ Swift 6.3.3, Docker Desktop 28.5.1. Plan: [PLAN.md](PLAN.md).
   interfaces)" and "Docker containers" (both off) and Custom labels. Scan results show the
   hardware and Docker cards when they're on. Process detail shows children. Closing the panel or
   switching to Scan stops Live.
+- **1h, CPU energy and defaults** (after the owner's decisions): per-process CPU energy from
+  `proc_pid_rusage` v6 (public API), shown as watts in Live (total for your processes, and under
+  each Top CPU figure), in scan group rows, process detail, the high-CPU finding's evidence and
+  both reports. Totals add energy over the whole interval, so a process born mid-interval isn't
+  overcounted. Hardware sensors are on by default; Docker stays opt-in with a "Show Docker
+  containers" button in Live mode. ADR-0001 addendum.
 - **Bug fix found on the way:** `ProvenanceResolver.resolve` trapped (`Duplicate values for key`)
   on a snapshot where a PID was reused during the interval. That snapshot holds the exited
   process and its successor. The resolver now keeps the running one. This was latent in
@@ -52,7 +58,7 @@ privilege was added. The CLI and MCP server are unchanged and don't expose Docke
 
 ## Tests
 
-`swift build && swift test`: **249 tests in 39 suites, all passing** (186 in 35 before), run 3×
+`swift build && swift test`: **257 tests in 41 suites, all passing** after 1h (249 in 39 at the end of 1g, 186 in 35 before), run 3×
 in a row green after 1d. One earlier full run had a single transient miss in the pre-existing
 live `yes`-fixture test (67% < 80% under parallel load). It passed 3/3 alone and in every later
 full run. `scripts/run-app.sh --build-only`: builds.
@@ -65,6 +71,7 @@ full run. `scripts/run-app.sh --build-only`: builds.
 | Live monitor | 16 | no work outside a session, tick deltas, PID reuse, live notices, providers off, top lists and trends, history bound, auto-pause, failure, refresh-now, dropping the stream, restart, interval clamp, 1,000 processes, live Mac |
 | Redacted export (+2) | | patterns compile; 1,000-process reports under 1 s |
 | Provenance resolver (+1) | | reused PID doesn't crash |
+| CPU energy (1h) | 8 | watts maths, never-zero rules, assembly windows (survivor, born mid-scan, ps, exited), totals over the interval, finding evidence, report text and JSON, old JSON decodes, live counter on this Mac |
 
 ## Validation on Apple Silicon (this M3 Pro)
 
@@ -75,6 +82,8 @@ full run. `scripts/run-app.sh --build-only`: builds.
 | Live overhead, release engine, 5 s interval, sensors and Docker on, 60 s | 0.65 s CPU in 64 s = **1.0% of one core**, ~90 ms per tick, 10.7 MB peak footprint |
 | Live overhead, Debug app with UI, 30 s | 0.59 s CPU = 2.0% of one core |
 | Idle after closing the panel | CPU time unchanged over 30 s |
+| CPU energy vs macmon `cpu_power`, side by side | two busy processes: +6.3 W vs +6.4 W; three: about +9 W in both; total about 2 W below macmon under load, 0.4–0.6 W vs 1.2–1.7 W at idle (root and kernel not readable) |
+| Live overhead with energy, release engine, 60 s | 0.61 s CPU in 62.8 s = 1.0% of one core, median tick 85.5 ms |
 | 15-minute session, release engine | 9.11 s CPU in 900.9 s = **1.0% of one core**; 174 ticks, median 93 ms; peak footprint 19.4 MB (≈ 9 MB growth over the 1-minute run); auto-paused at 900 s |
 
 ## Acceptance against PRD-v2 Phase 1 exit
@@ -94,12 +103,13 @@ unavailable; sensors are verified on one M3 Pro only; live mode doesn't sample r
 processes; containers aren't attributed to projects yet; Safari's WebKit processes don't group
 with Safari.
 
-## Open decisions for the owner
+## Owner decisions (2026-10-27)
 
-1. **CPU/GPU power:** keep "Unavailable", or bundle a pinned macmon build (Rust in `release.sh`,
-   a third-party binary in the notarized app). ADR-0001.
-2. **Defaults:** hardware sensors and Docker are off by default. Should they be on in v2.0?
-3. **Release:** this work isn't released or committed. Version bump and release are Jarvis or the owner's call.
+1. **CPU/GPU power:** no macmon. Per-process CPU energy from the public API (1h); whole-chip
+   CPU/GPU power stays "Unavailable".
+2. **Defaults:** hardware sensors on by default; Docker opt-in, one tap away in Live mode.
+3. **Commit:** Phase 0–1 committed on the branch. Release (version bump, notarization, the site's
+   "No temperature reading" line) is still the owner's call.
 
 ## Next: Phase 2 brief
 

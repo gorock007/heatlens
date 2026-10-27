@@ -1,7 +1,7 @@
 # HeatLens v2 compatibility matrix
 
 "Verified" means measured on that exact machine and OS, with the command recorded. Everything
-else is unverified and is labelled that way in the UI. Last updated 2026-10-27 (after Phase 1).
+else is unverified and is labelled that way in the UI. Last updated 2026-10-27 (after Phase 1 and brief 1h).
 
 ## Machines
 
@@ -26,7 +26,8 @@ else is unverified and is labelled that way in the UI. Last updated 2026-10-27 (
 | GPU temperature avg / hottest | SMC `Tg*` (`flt`) | °C | same | none | ❌ private | ✅ 18 keys | same |
 | Fan RPM / max | SMC `F<n>Ac`, `F<n>Mx`, `FNum` | RPM | same | none | ❌ private | ✅ 2 fans, max 6800 | "No fans reported" |
 | System power | SMC `PSTR` (`flt`) | W | same | none | ❌ private | ✅ matched macmon | "Unavailable" |
-| CPU / GPU power | IOReport CLPC energy counters | W | delta | none | ❌ private, per-firmware IDs | ⛔ not implemented (ADR-0001) | "Unavailable (needs per-macOS power tables)" |
+| Whole-chip CPU / GPU power | IOReport CLPC energy counters | W | delta | none | ❌ private, per-firmware IDs | ⛔ not implemented (ADR-0001) | "Unavailable (needs per-macOS power tables)" |
+| Per-process CPU energy | `proc_pid_rusage` v6 `ri_energy_nj` (public libproc) | W (delta over the interval) | delta | own processes only | ✅ | ✅ tracks macmon's CPU power: +6.3 W vs +6.4 W for two busy cores; total about 2 W below it under load (root, kernel not readable) | "Unavailable" / "Not accessible" for root |
 | Per-process CPU, RSS, footprint | libproc | % of one core / bytes | delta | own processes only | ✅ | ✅ | "Not accessible" + reason |
 | Root-process CPU | `/bin/ps` (scan only) | % of one core | delta | none | ✅ | ✅ | Live: "Live mode doesn't sample CPU for N root/other-user processes" |
 | Containers, image, state, labels | Docker Engine API `GET /containers/json` | — | per read, ~2 ms | user owns socket | ✅ (Docker) | ✅ Docker Desktop 28.5.1, API 1.51 | `DockerAvailability` state |

@@ -77,7 +77,8 @@ public struct RulesEngine: Sendable {
                     severity: severity,
                     confidence: .high,
                     explanation: explanation,
-                    evidence: group.evidence + [Evidence(label: "Group CPU", value: formatPercent(cpu), source: "sample interval delta")] + ports,
+                    evidence: group.evidence + [Evidence(label: "Group CPU", value: formatPercent(cpu), source: "sample interval delta")]
+                        + energyEvidence(snapshot.cpuWatts(for: group.members)) + ports,
                     limitations: ["High CPU can be useful work; this finding does not mean the process is unwanted."],
                     group: group,
                     samples: samples,
@@ -469,6 +470,12 @@ private extension RulesEngine {
     func portEvidence(_ ports: [UInt16]) -> [Evidence] {
         guard !ports.isEmpty else { return [] }
         return [Evidence(label: "Listening on", value: ports.map { ":\($0)" }.joined(separator: ", "), source: "proc_pidfdinfo")]
+    }
+
+    /// "Group CPU energy 9.1 W" when any member had an energy reading; empty otherwise.
+    func energyEvidence(_ watts: Double?) -> [Evidence] {
+        guard let watts else { return [] }
+        return [Evidence(label: "Group CPU energy", value: String(format: "%.1f W", watts), source: "per-process energy counter")]
     }
 
     func uptimeEvidence(_ uptime: TimeInterval) -> [Evidence] {

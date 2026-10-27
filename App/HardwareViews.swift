@@ -65,6 +65,8 @@ struct PowerContextRow: View {
 
 struct DockerCard: View {
     let snapshot: DockerSnapshot?
+    /// When set, the "Off" state offers a button that turns the switch on (Live mode).
+    var onTurnOn: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -80,10 +82,16 @@ struct DockerCard: View {
             if let snapshot {
                 content(snapshot)
             } else {
-                Text("Off. Turn on “Docker containers” in Settings. HeatLens only reads the local Docker socket and never starts Docker.")
+                Text(onTurnOn == nil
+                     ? "Off. Turn on “Docker containers” in Settings. HeatLens only reads the local Docker socket and never starts Docker."
+                     : "Off. HeatLens only reads the local Docker socket and never starts Docker.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let onTurnOn {
+                    Button("Show Docker containers", systemImage: "shippingbox", action: onTurnOn)
+                        .controlSize(.small)
+                }
             }
         }
     }

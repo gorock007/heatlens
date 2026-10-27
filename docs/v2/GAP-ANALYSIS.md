@@ -95,7 +95,7 @@ explicit switches:
 | v1 promise | v2 ask | Resolution |
 |---|---|---|
 | No polling, ~0 % idle CPU | Live dashboard, later a background service | Live sampling runs only while the live view is open and the user started it. Closing the panel stops it. Idle cost stays ~0. Background sampling waits for Phase 4 and its own budget. |
-| No undocumented sensor scraping | Temperatures, fans, power via private interfaces | Off by default. A Settings switch, "Hardware sensors (private macOS interfaces)", turns on the SMC provider. Every reading carries its source. Failure means "Unavailable", never a crash or zero. |
+| No undocumented sensor scraping | Temperatures, fans, power via private interfaces | A Settings switch, "Hardware sensors (private macOS interfaces)", controls the SMC provider. It was off by default in Phase 1; the owner chose on by default for v2.0 (2026-10-27, ADR-0001 addendum). Read-only. Every reading carries its source. Failure means "Unavailable", never a crash or zero. |
 | No network | Docker Engine API | Local Unix socket only, GET requests to an allowlist of paths, opt-in, off by default. No TCP, no `DOCKER_HOST` over the network. |
 | Never auto-kill | Same | Unchanged. |
 

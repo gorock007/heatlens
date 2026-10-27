@@ -16,6 +16,9 @@ public struct ProcessReading: Hashable, Sendable {
     public let residentBytes: UInt64?
     public let footprintBytes: UInt64?
     public let threadCount: Int?
+    /// Cumulative CPU energy since the process started, in nanojoules (`ri_energy_nj`); nil when
+    /// libproc refused the process or the kernel has no counter.
+    public let energyNanojoules: UInt64?
     /// `.available` when CPU and memory were readable, `.permissionDenied` for root/other-user
     /// processes (the ps fallback fills those), `.notSupported` for pid 0.
     public let detailAccess: DetailAccess
@@ -23,7 +26,7 @@ public struct ProcessReading: Hashable, Sendable {
     public init(identity: ProcessIdentity, parentPID: Int32, owner: ProcessOwner, name: String,
                 executablePath: String? = nil, arguments: [String]? = nil, currentDirectory: String? = nil,
                 cpu: CPUTime?, residentBytes: UInt64? = nil, footprintBytes: UInt64? = nil, threadCount: Int? = nil,
-                detailAccess: DetailAccess) {
+                detailAccess: DetailAccess, energyNanojoules: UInt64? = nil) {
         self.identity = identity
         self.parentPID = parentPID
         self.owner = owner
@@ -36,6 +39,7 @@ public struct ProcessReading: Hashable, Sendable {
         self.footprintBytes = footprintBytes
         self.threadCount = threadCount
         self.detailAccess = detailAccess
+        self.energyNanojoules = energyNanojoules
     }
 }
 
@@ -107,7 +111,7 @@ public struct LibprocProcessSampler: ProcessSampling {
         switch Libproc.bsdInfo(pid) {
         case .success(let bsd):
             let task = try? Libproc.taskInfo(pid).get()
-            let rusage = try? Libproc.rusageV4(pid).get()
+            let rusage = try? Libproc.rusage(pid).get()
             let cpu = task.map { CPUTime(userTicks: $0.userTicks, systemTicks: $0.systemTicks, timebase: timebase) }
                 ?? rusage.map { CPUTime(userTicks: $0.userTicks, systemTicks: $0.systemTicks, timebase: timebase) }
             return ProcessReading(identity: bsd.identity(pid: pid), parentPID: bsd.ppid, owner: owner(bsd.uid), name: bsd.name,
@@ -116,7 +120,8 @@ public struct LibprocProcessSampler: ProcessSampling {
                                   currentDirectory: try? Libproc.currentDirectory(pid).get(),
                                   cpu: cpu, residentBytes: task?.residentSize, footprintBytes: rusage?.physFootprint,
                                   threadCount: task.map { Int($0.threads) },
-                                  detailAccess: cpu == nil ? .permissionDenied : .available)
+                                  detailAccess: cpu == nil ? .permissionDenied : .available,
+                                  energyNanojoules: rusage?.energyNanojoules)
         case .failure(let failure):
             guard failure.code != ESRCH, let kinfo else { return nil }
             return ProcessReading(identity: kinfo.identity(pid: pid), parentPID: kinfo.ppid, owner: owner(kinfo.uid),
