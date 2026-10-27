@@ -131,6 +131,10 @@ install):
 
 `dockerEnabled` was deleted afterwards. Not driven: the process detail "CPU energy" row.
 
+Phase 2 (Projects card, Timeline card, Keep history, Delete history): **not yet driven.** The
+display was asleep or locked during the session. Covered by unit tests; on-screen check pending
+(Phase 3 brief 3a).
+
 Not driven by hand: the 15-minute auto-pause, Refresh now, the interval picker during a session
 and Custom labels. Each is covered by a unit test (`LiveMonitorTests`, `WorkloadHeuristicsTests`).
 

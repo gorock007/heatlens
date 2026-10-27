@@ -105,9 +105,9 @@ Dependency order: 1a → (1b, 1c, 1d in any order) → 1e → 1f → 1g.
 - **Exit (PRD-v2):** a live dashboard with refresh controls, low-overhead sampling, accurate
   metrics, explicit source and availability indicators, and integration tests.
 
-## Phase 2 — project-aware diagnostics and history (P0/P1)
+## Phase 2 — project-aware diagnostics and history (P0/P1) ✅
 
-Next-step brief: [PHASE-1-REPORT.md § Next](PHASE-1-REPORT.md#next-phase-2-brief).
+Results: [PHASE-2-REPORT.md](PHASE-2-REPORT.md).
 
 ### 2a · Project roots and container attribution ✅ (ADR-0004)
 - **Did:** `ProjectRootLocator` (stat-only, protected folders skipped, cached), `ProjectMapping`
@@ -131,9 +131,17 @@ Next-step brief: [PHASE-1-REPORT.md § Next](PHASE-1-REPORT.md#next-phase-2-brie
   retention 1/7/30 days, Delete history, size in Settings. Written only by `LiveMonitor`.
 - **Accepted:** permissions and symlink refusal, round trip with bound values, minute rollups,
   retention, a 7-day size bound (6.5 MB worst case), delete, no writes outside a session.
-- 2d Timeline view: thermal, CPU, swap, container starts, test runs.
-- 2e Concurrent expensive-command detection (`npm ci`, `vitest`, `next build`, `docker build`),
-  labelled as inference.
+### 2d · Timeline ✅
+- **Did:** the session timeline in memory (`LiveTick.timeline`), saved ranges from the history,
+  the Timeline card (CPU line, event markers, busiest moment with its projects and events),
+  `TimelineAnalysis.peak`.
+
+### 2e · Expensive commands ✅
+- **Did:** `ExpensiveCommand` (installs, builds, test runs; outermost only), `TimelineDetector`
+  (started, at once, repeated, containers, thermal), labelled as inference where it is one.
+- **Accepted:** tests per command and event; 1,000 processes < 10 ms per tick (classification
+  cached per process); a placeholder `npm ci` + `vitest` on this Mac produced both starts and the
+  concurrency inference.
 
 ## Phase 3 — explanations, alerts, safe actions (P1)
 

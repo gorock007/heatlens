@@ -52,3 +52,8 @@
     from the host's, so the Docker VM row is an estimate and never shown below 0.
 19. HeatLens recognises Docker Desktop's VM by its process name. Any other app's
     Virtualization VM running at the same time is counted in the same row (a notice says so).
+20. Expensive commands (installs, builds, test runs) are recognised by name and arguments, and
+    only when an update sees them running: a command shorter than the Live interval can be missed.
+    "Several at once" and "likely repeated runs" are HeatLens's inferences, and say so.
+21. The timeline covers this Live session in memory. Looking further back needs "Keep history",
+    and covers only the times Live was running.

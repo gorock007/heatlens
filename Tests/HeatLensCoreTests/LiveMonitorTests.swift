@@ -122,6 +122,33 @@ struct LiveMonitorTests {
         try await HistoryStore.deleteHistory(at: url, closing: store)
     }
 
+    @Test("A test run that starts mid-session is an event on its tick, in the bounded session timeline, and in the history")
+    func timelineEvents() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("heatlens-timeline-\(UUID().uuidString)/history.sqlite")
+        let store = try HistoryStore(url: url)
+        let vitestStart = Int64(ScriptedProcessSampler.base.timeIntervalSince1970 * 1_000_000) + 2_500_000
+        let sampler = ScriptedProcessSampler { call in
+            var list = [reading(10, cpuSeconds: Double(call))]
+            if call >= 3 {
+                list.append(ProcessReading(identity: ProcessIdentity(pid: 77, startTimeMicros: vitestStart), parentPID: 1, owner: .currentUser,
+                                           name: "node", arguments: ["node", "/Users/someone/Developer/app/node_modules/.bin/vitest", "run"],
+                                           cpu: CPUTime(userNanoseconds: UInt64(call) * 100_000_000, systemNanoseconds: 0), detailAccess: .available))
+            }
+            return list
+        }
+        let live = monitor(sampler)
+        let stream = await live.start(LiveConfiguration(historyCapacity: 3, history: store))
+        let got = await ticks(stream, count: 5)
+        await live.stop()
+        #expect(got[0].events.isEmpty)
+        #expect(got[1].events.map(\.title) == ["vitest started"])
+        #expect(got[2...].allSatisfy { $0.events.isEmpty })
+        #expect(got.last?.timeline.points.count == 3)
+        #expect(got.last?.timeline.events.map(\.title) == ["vitest started"])
+        #expect(await eventually { (try? await store.counts().events) == 1 })
+        try await HistoryStore.deleteHistory(at: url, closing: store)
+    }
+
     @Test("CPU is the delta between consecutive ticks, 100 = one core")
     func deltas() async {
         // Cumulative CPU 0 s, 0.5 s, 1.5 s, 1.75 s at 1 s steps.

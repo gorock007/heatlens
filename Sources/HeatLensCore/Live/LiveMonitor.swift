@@ -67,6 +67,11 @@ public struct LiveTick: Sendable {
     public let collectionSeconds: TimeInterval
     /// Set when the previous tick couldn't be saved to the history; the session goes on.
     public var historyFailure: String? = nil
+    /// Events found on this tick (briefs 2d, 2e).
+    public var events: [TimelineEvent] = []
+    /// This session's timeline so far, in memory: points, busiest projects and events, bounded
+    /// like the trend ring.
+    public var timeline: HistoryWindow = .empty
 }
 
 public enum LiveEvent: Sendable {
@@ -167,6 +172,8 @@ public actor LiveMonitor {
         var history = LiveHistory(capacity: configuration.historyCapacity)
         var sequence = 0
         var historyFailure: String?
+        var detector = TimelineDetector()
+        var timeline = (points: [HistoryPoint](), projects: [HistoryProjectPoint](), events: [TimelineEvent]())
         do {
             var previousProcesses = try processSampler.snapshot()
             var previousHost = systemSampler.counters()
@@ -193,15 +200,28 @@ public actor LiveMonitor {
                     ProjectAttributor.breakdown(snapshot: snapshot, groups: groups, docker: docker,
                                                 mappings: configuration.projectMappings, locator: $0)
                 } ?? .empty
-                let tick = LiveTick(sequence: sequence, snapshot: snapshot, groups: groups, hardware: hardware, docker: docker,
+                var tick = LiveTick(sequence: sequence, snapshot: snapshot, groups: groups, hardware: hardware, docker: docker,
                                     projects: projects, topByCPU: byCPU, topByMemory: byMemory,
                                     history: history.window(for: Set((byCPU + byMemory).map(\.identity))),
                                     collectionSeconds: Self.seconds(began.duration(to: .now)), historyFailure: historyFailure)
+                tick.events = detector.events(for: tick)
+                let point = HistoryRecorder.point(from: tick)
+                let projectPoints = HistoryRecorder.projectPoints(from: tick)
+                timeline.points.append(point)
+                timeline.projects += projectPoints
+                timeline.events += tick.events
+                let capacity = configuration.historyCapacity
+                if timeline.points.count > capacity {
+                    let oldest = timeline.points[timeline.points.count - capacity].timestamp
+                    timeline.points.removeFirst(timeline.points.count - capacity)
+                    timeline.projects.removeAll { $0.timestamp < oldest }
+                }
+                if timeline.events.count > Self.timelineEventLimit { timeline.events.removeFirst(timeline.events.count - Self.timelineEventLimit) }
+                tick.timeline = HistoryWindow(points: timeline.points, projects: timeline.projects, events: timeline.events)
                 emit(.tick(tick), session: id)
                 if let store = configuration.history {
                     do {
-                        try await store.record(HistoryRecorder.point(from: tick), projects: HistoryRecorder.projectPoints(from: tick),
-                                               events: [])
+                        try await store.record(point, projects: projectPoints, events: tick.events)
                         historyFailure = nil
                     } catch {
                         historyFailure = "\(error)"
@@ -226,6 +246,9 @@ public actor LiveMonitor {
             stop(session: id)
         }
     }
+
+    /// Events kept in a session's in-memory timeline.
+    static let timelineEventLimit = 200
 
     static func topLists(_ processes: [ProcessSample], count: Int) -> (cpu: [ProcessSample], memory: [ProcessSample]) {
         let live = processes.filter { $0.detailAccess != .processExited }

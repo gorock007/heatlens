@@ -108,6 +108,10 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
       CPU (1.15% of one core), median tick 97.4 ms, max 114.7 ms, max RSS 18.2 MB. The breakdown
       itself is under 50 ms for 1,000 processes in 300 groups (a test); repository roots are
       cached, so only new folders cost stats.
+   7. With the timeline and expensive-command detection (briefs 2d/2e): two runs of
+      `--live 60 --interval 5`: 0.78 s and 0.72 s CPU in 64 s (1.1–1.2% of one core), median tick
+      96–101 ms. Detection on 1,000 processes is under 10 ms per tick (a test), because each
+      process is classified once. History writes are under 0.1 ms per tick (ADR-0005).
 
 ## 3. Snapshot cost
 

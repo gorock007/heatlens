@@ -24,6 +24,9 @@ func runLive(seconds: TimeInterval, interval: TimeInterval) async {
                        usage.containers.isEmpty ? "" : " (\(usage.containers.count) containers)")
             }
             print("  projects: " + projects.joined(separator: " · "))
+            for event in tick.events {
+                print("  event: \(event.kind.rawValue) · \(event.title)\(event.isInference ? " (inference)" : "")")
+            }
         case .autoPaused:
             print("auto-paused after \(Int(seconds)) s")
         case .failed(let message):
