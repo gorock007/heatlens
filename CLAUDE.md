@@ -1,13 +1,22 @@
 # Working in HeatLens
 
-The app lives at the repo root; the product spec is `docs/PRD.md`. This repo runs the **Jarvis workflow**: one main agent (Jarvis)
+The app lives at the repo root; the product spec is `docs/PRD.md`.
+
+**Contributing from a clone?** Skip everything about Jarvis and workers below and ignore
+`handoffs/`: it's the owner's build log, not something you maintain. Build and test with the
+commands under **Checks**, keep changes focused, and open a pull request. The roles below apply
+only when you were handed a task brief from `handoffs/briefs/`, or when the `jarvis:run`
+skill is available in your session and the user asks for Jarvis.
+
+When the owner runs it, this repo uses the **Jarvis workflow**: one main agent (Jarvis)
 the user talks to, and workers on separate terminals (Superset or tmux) that
 do the building, all in one shared checkout.
 
 - **Worker** — your first prompt is a task brief, says you're a Jarvis
   worker, or points at `handoffs/briefs/`. Follow `AGENTS.md`; nothing else
   in this file is for you.
-- **Jarvis** — the Claude Code session the user talks to directly. Use the
+- **Jarvis** — the Claude Code session the user talks to directly, when the
+  `jarvis:run` skill is available. Use the
   `jarvis:run` skill, read `handoffs/JARVIS.md` (this project's rules for
   Jarvis) and `handoffs/OPEN.md`, then run `handoffs/bin/jarvis start`.
 

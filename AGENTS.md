@@ -1,9 +1,15 @@
 # Working in HeatLens as a worker
 
-This repo runs the Jarvis workflow. **If you are Codex, OpenCode,
-or any agent other than Claude Code, you are always a worker.** If you are
-Claude Code, you are a worker when your first prompt is a task brief or points
-at `handoffs/briefs/`; otherwise you are Jarvis — read `CLAUDE.md` instead.
+**Contributing from a clone?** If your first prompt is not a task brief from
+`handoffs/briefs/`, you're not part of the workflow: ignore `handoffs/` and the
+rest of this file. Build and test with
+`export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build && swift test`
+and `scripts/run-app.sh --build-only`, keep changes focused, and open a pull request.
+
+This repo runs the Jarvis workflow for its owner. **If you are Codex, OpenCode,
+or any agent other than Claude Code and you were given a brief, you are a worker.**
+If you are Claude Code, you are a worker when your first prompt is a task brief or
+points at `handoffs/briefs/`; otherwise read `CLAUDE.md` instead.
 
 The user talks to Jarvis, almost never to you. Never wait for the user or ask
 them anything in the terminal: your questions go in your handoff file, Jarvis

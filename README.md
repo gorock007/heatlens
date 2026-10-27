@@ -69,6 +69,16 @@ Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; signed a
 - [docs/SCENARIOS.md](docs/SCENARIOS.md)
 - [docs/samples/](docs/samples/) (synthetic [text](docs/samples/report.txt) and [JSON](docs/samples/report.json) reports)
 
+## How this was built
+
+HeatLens was built with [Jarvis](https://github.com/gorock007/jarvis), a workflow where one
+coordinating Claude Code session plans and reviews while worker agents (Claude Code and Codex)
+build each phase in their own terminals. Every phase's brief is in
+[`handoffs/briefs/`](handoffs/briefs/), and the worker's handoff (what changed, the checks it
+ran, what it didn't verify) is in [`handoffs/merged/`](handoffs/merged/). That includes the
+safe-stop security review and the menu-bar click-through. You don't need any of it to build,
+test or contribute: see `scripts/run-app.sh` and the engine tests above.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
