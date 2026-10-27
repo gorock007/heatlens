@@ -12,3 +12,5 @@ scratchpad/
 # Release output
 dist/
 .vercel/
+.vercel
+.env*
