@@ -51,8 +51,10 @@ private struct Header: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
+            // Lets a press on the title reach the panel's drag background (StatusPanel.swift).
             Text("HeatLens")
                 .font(.headline)
+                .allowsHitTesting(false)
             Spacer()
             Button(showingSettings ? "Close settings" : "Settings", systemImage: showingSettings ? "xmark" : "gearshape",
                    action: onSettings)

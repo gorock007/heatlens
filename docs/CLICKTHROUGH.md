@@ -25,6 +25,28 @@ output remain in ignored local scratch storage and are not part of this report.
 | 9 | Scenario 9: quit during scan | pass | Clicked Quit HeatLens while progress read “6 of 10 seconds”; the app exited. No app or scan helper remained; the initial broad match contained only the computer-use runtime, which was then reset. |
 | 10 | Cleanup | pass | Before quitting, settings read 10 s with both exclusion fields empty; after computer-use cleanup, both required pgrep commands produced no output. |
 
+## Panel (Phase 6a)
+
+Observed on 2026-10-27 with the Debug build. The status item was opened with a
+System Events press on the app's menu-bar item (a menu-bar manager covered the
+icon, so no physical click on it); everything else used CoreGraphics mouse and
+key events. Sheet and copy checks used a local build wired to the fixture scan
+and fixture stopper, which never signals.
+
+| Step | Check | Result |
+|---|---|---|
+| P1 | Click the thermometer: the panel opens directly under it; click it again: the panel closes | pass |
+| P2 | Drag the "HeatLens" title, or any empty part of the panel, to another spot | pass, moves anywhere, including the second display |
+| P3 | Click another app: an unmoved panel closes, a moved one stays open and floats | pass |
+| P4 | Escape closes the panel, moved or not; with the stop sheet up, Escape closes only the sheet | pass |
+| P5 | After a close, the next open is under the icon and closes on a click elsewhere again | pass |
+| P6 | Copy command / Copy PID show "Copied…", then revert about 2 seconds later | pass |
+| P7 | Idle with the panel closed: `ps -p <pid> -o %cpu=,time=` 30 s apart | 0.0%, CPU time unchanged |
+
+Dragging starts on the title and on empty background; other text and the
+scrolling results take the press as before. Escape in the scanning view closes
+the panel and leaves the scan running (reopen to see it); Cancel still stops it.
+
 ## Idle measurements
 
 Command: `ps -p <launched-app-pid> -o %cpu=,rss=,time=`. Taken after the

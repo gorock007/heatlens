@@ -104,6 +104,7 @@ struct FindingCard: View {
             }
             .disabled(command == nil)
             .help(command == nil ? "Command line not accessible" : "Copy the command line")
+            .resetsAfterCopy($copiedCommand)
         case .openActivityMonitor:
             Button("Activity Monitor", action: openActivityMonitor)
         case .copyReport:
@@ -179,5 +180,17 @@ struct FlowLayout: Layout {
         }
         if !current.indices.isEmpty { rows.append(current) }
         return rows
+    }
+}
+
+extension View {
+    /// Turns a "Copied" flag back off about 2 seconds after it's set, with a one-shot sleep that
+    /// is cancelled if the view goes away. No repeating timer.
+    func resetsAfterCopy(_ copied: Binding<Bool>) -> some View {
+        task(id: copied.wrappedValue) {
+            guard copied.wrappedValue else { return }
+            try? await Task.sleep(for: .seconds(2))
+            if !Task.isCancelled { copied.wrappedValue = false }
+        }
     }
 }

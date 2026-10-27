@@ -120,6 +120,7 @@ struct ProcessDetailView: View {
                     Pasteboard.copy("\(identity.pid)")
                     copiedPID = true
                 }
+                .resetsAfterCopy($copiedPID)
                 Button(copiedCommand ? "Copied command" : "Copy command") {
                     if let command = Format.command(process?.arguments) {
                         Pasteboard.copy(command)
@@ -127,6 +128,7 @@ struct ProcessDetailView: View {
                     }
                 }
                 .disabled(Format.command(process?.arguments) == nil)
+                .resetsAfterCopy($copiedCommand)
                 if let project {
                     Button("Open project") { openProject(project.directory) }
                         .disabled(!projectExists(project.directory))
