@@ -23,5 +23,5 @@ Usage band: green (5h 1% used, 11:07)
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
 - Phase 2 safety DONE: 2a/2b/2c/2d merged (d009384); review findings all fixed (#5: scripts/with-timeout.sh). Ruling: exclusion also suppresses stop. 2e docs merged (d7cd4bf): PERFORMANCE.md, SCENARIOS.md, samples/. PRD §11 definition of done met in code; scenarios 8 & 9 are manual-only (need the click-through).
 - CODEX: limit reset; gpt-6-astra probed OK 2026-10-27 (recorded in JARVIS.md).
-- Phase 3a click-through running (codex astra, term 02a13be4). On merge: any failures it records → fix brief; then tell the user scenarios 8/9 status.
+- Phase 3a click-through RETRY running (codex astra; first try hit cua.getApp timeout on LSUIElement app, perms verified OK; retry uses System Events + screencapture). On merge: any failures it records → fix brief; then tell the user scenarios 8/9 status.
 - Jarvis/user only: real signing + notarization. Remote: github.com/gorock007/heatlens (PUBLIC); branch tracks origin/main, push.default=upstream, commits use the noreply email.

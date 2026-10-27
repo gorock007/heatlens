@@ -1,0 +1,76 @@
+# Menu-bar app clickthrough
+
+Observed on 2026-10-27 on the development Mac, using the Debug app built and
+launched with:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && scripts/run-app.sh
+```
+
+These are manual UI observations, not automated regression tests. System Events
+provided the accessibility tree; physical mouse events opened the status popover
+when its accessibility press did not. Screenshots and raw accessibility/process
+output remain in ignored local scratch storage and are not part of this report.
+
+| Step | Check | Result | Observation |
+|---|---|---|---|
+| 1 | Launch, thermometer, Scan now, results | pass | The popover opened; clicking Scan now showed progress through 10 seconds and then populated results. |
+| 2 | Group limit, idle note, show all/fewer | pass | The first completed scan had 12 collapsed group rows, “30 idle groups” and “Show all 58 groups”; expansion exposed 58 rows and “Show fewer groups” restored 12. |
+| 3 | Group member detail, fields, Copy PID, Back | pass | Expanded a group and opened its member; PID, parent chain, owner, uptime, executable, command/directory availability and CPU/memory were present; Copy PID matched, and Back returned to results. A project worker's detail additionally showed “From cwd · High confidence” plus finding evidence and limitations. |
+| 4 | Scenario 6: restricted process | pass | A process owned by another user showed “Not accessible” for Command and Directory, “via ps” for CPU/memory, and “Unknown project.” |
+| 5 | Scenario 11: protected process controls | pass | The restricted Apple system process's full detail showed Copy PID, disabled Copy command and Activity Monitor; Request stop was absent. |
+| 6 | Eligible leftover stop sheet, then Cancel | pass | Request stop opened a sheet containing PID, command, project, impact and the interruption warning; clicking Cancel removed the sheet. Send SIGTERM was never clicked. |
+| 7 | Settings, 5-second scan, exclusions, login status | pass | Initially 10 s was selected and both exclusion lists were empty; 5 s produced progress ending at “5 of 5 seconds” and a “5-second sample”; 10 s was restored. Adding one exact process-name exclusion showed “1 finding hidden by your exclusions”; removing it cleared the note. Launch at login was unchecked and reported “Unavailable for this build”; it was not toggled. |
+| 8 | Scenario 8: idle after a finished scan | pass | With the popover dismissed after a completed scan, two samples 30 seconds apart both reported 0.0% CPU and unchanged CPU time of 0:21.05; measurements below. |
+| 9 | Scenario 9: quit during scan | pass | Clicked Quit HeatLens while progress read “6 of 10 seconds”; the app exited. No app or scan helper remained; the initial broad match contained only the computer-use runtime, which was then reset. |
+| 10 | Cleanup | pass | Before quitting, settings read 10 s with both exclusion fields empty; after computer-use cleanup, both required pgrep commands produced no output. |
+
+## Idle measurements
+
+Command: `ps -p <launched-app-pid> -o %cpu=,rss=,time=`. Taken after the
+5-second scan completed and the settings/exclusion checks were finished, with
+the popover closed. The configured duration had already been restored to 10 s.
+
+| Local time | %CPU | RSS (KB) | CPU time |
+|---|---|---|---|
+| 11:15:31 | 0.0 | 92,368 | 0:21.05 |
+| 11:16:01 | 0.0 | 55,760 | 0:21.05 |
+
+This establishes no CPU-time growth at the displayed resolution during this
+30-second interval; it does not prove the absence of every possible wakeup.
+
+## Quit and cleanup output
+
+Immediately after the UI quit, `pgrep -fl "HeatLens|/bin/ps|pmset"` returned
+the following, with unrelated paths and arguments reduced to process names:
+
+```text
+2705 node
+2706 node
+```
+
+Both were this task's computer-use runtime, matching the repository name in
+their working-directory arguments. The launched app PID was gone and
+`pgrep -x HeatLens` returned no output. Resetting the computer-use runtime
+removed both remaining matches. The final exact stdout for each command was
+empty (exit status 1):
+
+```sh
+pgrep -fl "HeatLens|/bin/ps|pmset"
+pgrep -fl HeatLens
+```
+
+## Limits and repeat verification
+
+The native `getApp` call timed out once; the fallback completed the checks.
+The popover occasionally closed between operations and was reopened before
+continuing. Counts and resource measurements varied between scans.
+
+No stop signal was requested through the app, no launch-at-login change was
+made, and no source code was changed. Activity Monitor comparison, a successful
+termination outcome, and launch-at-login registration were not tested here.
+
+To repeat, run the launch command above, click the thermometer and **Scan now**,
+compare sampled resource usage with Activity Monitor, and follow the ten rows.
+Cancel the stop sheet, leave launch at login unchanged, restore 10 s and empty
+exclusions, then quit during a scan and repeat the process checks.
