@@ -4,6 +4,13 @@
 on-demand, read-only macOS menu-bar diagnostic app that explains why a Mac is hot, noisy, slow,
 or under resource pressure. It runs fully offline: nothing is monitored until you scan.
 
+## Install
+
+Download [`HeatLens.dmg`](https://github.com/gorock007/heatlens/releases/latest) from the latest
+release, open it, and drag HeatLens to Applications. Requires macOS 14 or later on Apple Silicon.
+
+To cut a release, see [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Requirements
 
 - macOS 14 or later
@@ -48,11 +55,12 @@ swift run heatlens-probe
 
 ## Status
 
-Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; not yet signed/notarized.
+Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; signed and notarized from v1.0.0.
 
 ## Documentation
 
 - [docs/PRD.md](docs/PRD.md)
+- [docs/RELEASING.md](docs/RELEASING.md)
 - [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
 - [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md)

@@ -9,3 +9,5 @@ DerivedData/
 xcuserdata/
 .DS_Store
 scratchpad/
+# Release output
+dist/
