@@ -13,7 +13,6 @@ Usage band: green (5h 4% used, 11:18)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-27 12:13 · codex/gpt-6-astra high · term 357a17a8-df5f-4117-a1d8-ef06725c05ae · handoffs/briefs/2026-10-27-1300-p5a-app-icon.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
