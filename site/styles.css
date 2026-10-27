@@ -1064,6 +1064,11 @@ pre code {
   border-top: 1px solid var(--line);
 }
 
+.download-icon {
+  display: block;
+  margin-bottom: 20px;
+}
+
 .download .inner {
   display: flex;
   flex-wrap: wrap;
