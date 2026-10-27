@@ -28,6 +28,13 @@
 #                                      coordinating vs building, from local transcripts
 #   jarvis hook prompt                 UserPromptSubmit guard (from .claude/settings.json)
 #   jarvis statusline                  statusline tap: saves the 5-hour reading, then runs yours
+#   jarvis lock <class> [--wait <sec>] [--reuse] -- <command…>
+#                                      run a heavy command only while holding its class's lease,
+#                                      machine-wide or per checkout; waiters queue in order
+#   jarvis resources [--json]          who holds each lease, who's queued, stored passes
+#   jarvis doctor [--apply | --quiet]  which agent processes, terminals and runs of this checkout
+#                                      are alive and why; --apply ends only the finished and lost
+#                                      ones Jarvis owns, each audited; --quiet: one line or nothing
 #
 # Workers run on a host: Superset, Ultron, tmux, or one added in handoffs/bin/hosts/ (see
 # "hosts" below). The agent in each terminal is any CLI: claude, codex, opencode, or
@@ -37,6 +44,7 @@
 set -u
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+JARVIS_CALLER_PWD=$PWD   # `lock` runs its command where it was called from
 cd "$ROOT" || exit 0
 H=handoffs
 OPEN="$H/OPEN.md"
@@ -52,6 +60,7 @@ JARVIS_WATCH_SEC=60
 JARVIS_STALL_MIN=15      # a worker screen unchanged this long, with no handoff, wakes Jarvis
 JARVIS_PUSH=1
 JARVIS_REAP=1            # merge stops what the closed worker left running (0 = only list it)
+JARVIS_STOP_GRACE=10     # seconds merge/close wait for a closed worker's terminal and agent to go
 JARVIS_HOST=""           # superset | ultron | tmux | <name> with handoffs/bin/hosts/<name>.sh; empty = detect
 # How a terminal host that isn't an agent launcher itself (tmux) starts each worker:
 # a sh command line reading $JARVIS_MODEL, $JARVIS_EFFORT and $JARVIS_PROMPT from its
@@ -95,6 +104,8 @@ mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; 
 #   send <id> --keys <k,k>               press keys, in Superset's names (enter, esc,
 #                                        tab, shift+tab, up, ctrl+c, a single character)
 #   close <id>                           close a terminal
+#   titles                               optional: "<id>\t<title>" per open terminal, so
+#                                        `jarvis doctor` can name the ones it doesn't know
 #   clear <id>                           optional: restart Jarvis's agent on a fresh
 #                                        context in the same terminal; without it the
 #                                        watcher types /clear
@@ -124,6 +135,11 @@ superset_list() {
   printf '%s' "$out" | jq -r '.sessions[]? | select(.exited | not) | .terminalId'
 }
 
+superset_titles() {
+  superset terminals list --workspace "$WS" --json 2>/dev/null \
+    | jq -r '.sessions[]? | select(.exited | not) | [.terminalId, (.customTitle // .title // "")] | @tsv'
+}
+
 superset_read() {
   superset terminals read --workspace "$WS" --terminal "$1" --max-lines "$2" --json 2>/dev/null \
     | { have jq && jq -r '.text // empty' || cat; }
@@ -137,7 +153,7 @@ superset_send() {
   fi
 }
 
-superset_close() { superset terminals close --workspace "$WS" --terminal "$1" >/dev/null 2>&1; }
+superset_close() { superset terminals close --workspace "$WS" --terminal "$1" >/dev/null; }
 
 # Ultron: its daemon runs each agent in a session (s_…) in this checkout's project and
 # launches the agent itself, as Superset does. A Claude Jarvis there is usually a chat
@@ -208,7 +224,7 @@ ultron_send() {
   fi
 }
 
-ultron_close() { ult term close "$1" --json >/dev/null 2>&1; }
+ultron_close() { ult term close "$1" --json >/dev/null; }
 
 ultron_clear() { ult term clear "$1" --json >/dev/null; } # same session id, fresh agent
 
@@ -275,8 +291,8 @@ tmux_send() {
 }
 
 tmux_close() {
-  [ -n "$(tmux display-message -p -t "$1" '#{@jarvis}' 2>/dev/null)" ] || return 1
-  tmux kill-pane -t "$1" 2>/dev/null
+  [ -n "$(tmux display-message -p -t "$1" '#{@jarvis}' 2>/dev/null)" ] || { echo "$1 is not a window jarvis spawn opened" >&2; return 1; }
+  tmux kill-pane -t "$1"
 }
 
 agent_cmd() { # $1 = agent: the sh command line a terminal host runs for it
@@ -392,7 +408,7 @@ cmd_start() {
 }
 
 cmd_status() {
-  local b line id brief ho ids="" n=0 changed claimed unclaimed
+  local b line id brief ho ids="" n=0 changed claimed unclaimed live
   [ -f "$OPEN" ] || die "no $OPEN — run jarvis:setup first"
 
   b=$(band)
@@ -402,6 +418,13 @@ cmd_status() {
   esac
 
   printf 'claude sessions: %s of %s (Jarvis included)\n' "$(claude_sessions)" "$JARVIS_MAX_CLAUDE"
+  # what is actually running here, from Claude Code's session records, when it writes them
+  if have jq && ls "$CLAUDE_DIR"/sessions/*.json "$HOME"/.claude/sessions/*.json >/dev/null 2>&1; then
+    live=$(claude_here | wc -l | tr -d ' ')
+    printf '  claude processes alive in this checkout: %s' "$live"
+    [ "$live" -gt "$(claude_sessions)" ] && printf ' (%s more than OPEN.md lists)' $((live - $(claude_sessions)))
+    echo
+  fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     n=$((n + 1))
@@ -450,6 +473,7 @@ EOF
   printf 'OPEN.md: %s question(s) for the user · %s to-do\n' "$q" "$n"
   watch_running || echo "watcher: not running — start it: handoffs/bin/jarvis watch --start"
   cmd_leftovers --quiet
+  cmd_doctor --quiet
 }
 
 # ---------------------------------------------------------------- spawn
@@ -467,7 +491,7 @@ codex_trust() {
 }
 
 cmd_spawn() {
-  local brief="" after="" force=0 atts="" worker model effort tier prompt name id b cap_now ifs
+  local brief="" after="" force=0 atts="" worker model effort tier prompt name id b cap_now ifs old spawned
   while [ $# -gt 0 ]; do
     case "$1" in
       --after) after="${2:-}"; shift 2 ;;
@@ -525,13 +549,39 @@ cmd_spawn() {
   set -- $atts
   set +f
   IFS=$ifs
+  old=$(runs_of "$brief" running | tr '\n' ' ' | sed 's/ $//')
+  # taken before the host starts the agent, so the agent's own start time is never earlier
+  spawned=$(now)
   id=$(host spawn "$worker" "$model" "$effort" "$prompt" "$name" "$@") \
     || die "spawn failed on $HOST (a failed Claude spawn can mean the red band)"
   [ -n "$id" ] || die "spawn on $HOST returned no terminal id"
 
-  sed -i.bak -E "s/^started:.*/started: $(date '+%Y-%m-%d %H:%M') · terminal: $id/" "$brief" && rm -f "$brief.bak"
+  brief_set_started "$brief" "started: $(date '+%Y-%m-%d %H:%M') · terminal: $id"
+  if run_ok "$id"; then
+    rm -f "$RUNS/$id"
+    run_set "$id" run "$id" brief "$brief" agent "$worker" model "${model:-default}" effort "${effort:--}" \
+      host "$HOST" spawned "$spawned" state running
+  else
+    echo "warning: terminal id '$id' has characters the run registry doesn't take: not recorded in $RUNS, so merge closes it only through the brief's started: line"
+  fi
   open_add_running "- $(date '+%Y-%m-%d %H:%M') · $worker/${model:-default}${effort:+ $effort} · term $id · $brief"
   echo "spawned $(short "$id") $worker/${model:-default}${effort:+ $effort} ← $brief (Claude sessions $(claude_sessions) of $JARVIS_MAX_CLAUDE)"
+  [ -n "$old" ] && echo "warning: $brief already had a running worker ($old); merge closes every worker of this brief. To close the old one now: handoffs/bin/jarvis close ${old%% *}"
+  return 0
+}
+
+# Record the terminal in the brief: rewrite its started: line, or add one after the
+# header (worker/model/effort), else after the title.
+brief_set_started() { # $1 = brief, $2 = the line
+  local tmp
+  if grep -q '^started:' "$1"; then
+    tmp=$(mktemp) && awk -v s="$2" '/^started:/ {print s; next} {print}' "$1" > "$tmp" && cat "$tmp" > "$1"
+  else
+    tmp=$(mktemp) && awk -v s="$2" '
+      NR == FNR { if (/^## /) stop = 1; if (!stop && /^(worker|model|effort):/) at = FNR; next }
+      {print} FNR == (at ? at : 1) {print s}' "$1" "$1" > "$tmp" && cat "$tmp" > "$1"
+  fi
+  rm -f "${tmp:-}"
 }
 
 # ---------------------------------------------------------------- leftovers
@@ -780,6 +830,238 @@ cmd_leftovers() {
   [ $any = 1 ] || [ $quiet = 1 ] || echo "nothing left running by ${brief:-any worker}"
 }
 
+# ---------------------------------------------------------------- runs
+
+# One file per spawn, handoffs/.jarvis/runs/<run>, run = the terminal id the host
+# returned: "key: value" lines (run, brief, agent, model, effort, host, spawned,
+# state, ended, reason, outcome); state is running | merged | closed | lost. It
+# holds what spawn and close decided. Whether a process is alive is asked of ps,
+# Claude Code's session records and the host each time, never stored.
+RUNS="$STATE/runs"
+
+run_ok() { case "$1" in ""|.|..|*[!A-Za-z0-9_%.-]*) return 1 ;; esac; }
+
+run_set() { # $1 = run, then <key> <value> pairs; written to a temp file beside it, then moved
+  local run=$1 f tmp
+  run_ok "$run" || return 1
+  shift
+  mkdir -p "$RUNS" && tmp=$(mktemp "$RUNS/.tmp.XXXXXX") || return 1
+  f="$RUNS/$run"
+  [ -f "$f" ] && cat "$f" > "$tmp"
+  while [ $# -ge 2 ]; do
+    J_V=$(printf '%s' "$2" | tr '\n' ' ') awk -v k="$1" '
+      index($0, k ": ") == 1 || $0 == k ":" { if (!done) print k ": " ENVIRON["J_V"]; done = 1; next }
+      {print} END { if (!done) print k ": " ENVIRON["J_V"] }' "$tmp" > "$tmp.n" && mv "$tmp.n" "$tmp"
+    shift 2
+  done
+  mv "$tmp" "$f"
+}
+
+run_get() { # $1 = run, $2 = key
+  run_ok "$1" && [ -f "$RUNS/$1" ] || return 0
+  awk -v k="$2" 'index($0, k ": ") == 1 {print substr($0, length(k) + 3); exit}' "$RUNS/$1"
+}
+
+runs_of() { # $1 = brief, $2 = only runs in this state: the runs spawned from that brief, oldest first
+  local b=$1 s=${2:-}
+  set -- "$RUNS"/*
+  [ -f "$1" ] || return 0
+  awk -v b="$b" -v s="$s" '
+    FNR == 1 { n++; f[n] = FILENAME; sub(/.*\//, "", f[n]) }
+    index($0, "brief: ") == 1 { br[n] = substr($0, 8) }
+    index($0, "state: ") == 1 { st[n] = substr($0, 8) }
+    index($0, "spawned: ") == 1 { sp[n] = substr($0, 10) + 0 }
+    END { for (i = 1; i <= n; i++) if (br[i] == b && (s == "" || st[i] == s)) print sp[i] + 0, f[i] }' "$@" \
+    | sort -n | awk '{print $2}'
+}
+
+lstart_of() { # $1 = pid: its start time as ps tells it in UTC, spaces as _; empty if gone or a zombie
+  TZ=UTC LC_ALL=C ps -o stat=,lstart= -p "$1" 2>/dev/null | awk '$1 !~ /^Z/ && NF >= 6 {print $2 "_" $3 "_" $4 "_" $5 "_" $6}'
+}
+
+same_proc() { [ -n "$2" ] && [ "$(lstart_of "$1")" = "$2" ]; } # $1 pid, $2 its start time: still that process?
+
+start_epoch() { # $1 = a start time from lstart_of
+  local t; t=$(printf '%s' "$1" | tr _ ' ')
+  date -j -u -f '%a %b %d %T %Y' "$t" +%s 2>/dev/null || date -u -d "$t" +%s 2>/dev/null
+}
+
+ancestors() { # this command's PID and those of the processes above it
+  local p=$$
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+    printf '%s ' "$p"; p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+  done
+}
+
+# "<pid> <procstart> <session> <status>" for each live Claude process whose cwd is
+# this checkout, from Claude Code's session records (sessions/<pid>.json). They are
+# undocumented: used when present. A record names its process's start time
+# (procStart, UTC), so a PID reused since then doesn't match; a record without one
+# matches only a process whose command line runs claude.
+claude_here() {
+  local a b d f recs="" q
+  have jq || return 0
+  q='select(type == "object" and .pid != null and .sessionId != null)
+     | [(.pid | tostring), .sessionId, (.cwd // ""), (.procStart // ""), (.status // "")] | @tsv'
+  a=$(cd "$CLAUDE_DIR/sessions" 2>/dev/null && pwd -P)
+  b=$(cd "$HOME/.claude/sessions" 2>/dev/null && pwd -P)
+  [ "$a" = "$b" ] && b=""
+  for d in "$a" "$b"; do
+    [ -n "$d" ] || continue
+    set -- "$d"/*.json
+    [ -f "$1" ] || continue
+    # one jq for the lot; file by file only if one of them doesn't parse
+    recs="$recs$(jq -r "$q" "$@" 2>/dev/null || for f; do jq -r "$q" "$f" 2>/dev/null; done)
+"
+  done
+  [ -n "$recs" ] || return 0
+  TZ=UTC LC_ALL=C ps -axww -o pid=,uid=,stat=,lstart=,command= 2>/dev/null \
+    | J_RECS="$recs" J_UID=$(id -u) J_ROOT="$ROOT" J_PHYS=$(pwd -P) awk '
+      BEGIN {
+        n = split(ENVIRON["J_RECS"], r, "\n")
+        for (i = 1; i <= n; i++) {
+          if (split(r[i], f, "\t") < 3 || (f[3] != ENVIRON["J_ROOT"] && f[3] != ENVIRON["J_PHYS"])) continue
+          ps = f[4]; gsub(/[ \t]+/, " ", ps); sub(/^ /, "", ps); sub(/ $/, "", ps)
+          sid[f[1]] = f[2]; start[f[1]] = ps; st[f[1]] = (f[5] == "" ? "-" : f[5])
+        }
+      }
+      $2 == ENVIRON["J_UID"] && ($1 in sid) && $3 !~ /^Z/ {
+        ls = $4 " " $5 " " $6 " " $7 " " $8
+        if (start[$1] != "") { if (start[$1] != ls) next }
+        else { c = $0; for (k = 0; k < 8; k++) sub(/^[ \t]*[^ \t]+[ \t]+/, "", c); if (c !~ /(^|\/)claude( |$)/) next }
+        gsub(/ /, "_", ls); print $1, ls, sid[$1], st[$1]
+      }'
+}
+
+run_by_start() { # $1 = brief, $2 = a process's start time: the run of that brief spawned last before it
+  local t r s best="" bs=-1
+  t=$(start_epoch "$2")
+  [ -n "$t" ] || return 0
+  for r in $(runs_of "$1"); do
+    s=$(run_get "$r" spawned); case "$s" in ""|*[!0-9]*) s=0 ;; esac
+    if [ "$s" -le $((t + 1)) ] && [ "$s" -gt "$bs" ]; then best=$r; bs=$s; fi
+  done
+  echo "$best"
+}
+
+# The Claude processes of a run, as claude_here lines. A session is the run's when
+# the prompt hook saw it in the run's terminal, or, when no terminal's record names
+# it, when its transcript opens with the spawn prompt for the run's brief (and, if
+# the brief was spawned more than once, the run is the last one spawned before the
+# process started). Never this command or anything above it.
+agent_procs() { # $1 = run
+  local run=$1 brief n=0 anc pid ps sid st own
+  brief=$(run_get "$run" brief)
+  [ -n "$brief" ] && n=$(runs_of "$brief" | wc -l | tr -d ' ')
+  anc=" $(ancestors)"
+  claude_here | while read -r pid ps sid st; do
+    case "$anc" in *" $pid "*) continue ;; esac
+    own=$(grep -lxF "$sid" "$STATE"/sessions/* 2>/dev/null)
+    if [ -n "$own" ]; then
+      printf '%s\n' "$own" | grep -qxF "$STATE/sessions/$run" || continue
+    else
+      [ -n "$brief" ] && [ "$(brief_of_session "$sid")" = "$brief" ] || continue
+      [ "$n" -le 1 ] || [ "$(run_by_start "$brief" "$ps")" = "$run" ] || continue
+    fi
+    echo "$pid $ps $sid $st"
+  done
+}
+
+alive_of() { # $1 = agent_procs lines: those whose PID is still the same process
+  printf '%s\n' "$1" | while read -r pid ps rest; do
+    [ -n "$pid" ] && same_proc "$pid" "$ps" && echo "$pid $ps $rest"
+  done
+}
+
+has_pid() { printf '%s\n' "$2" | awk -v p="$1" '$1 == p {f = 1} END {exit !f}'; } # $1 pid, $2 lines
+
+term_listed() { host list 2>/dev/null | grep -qxF "$1"; } # unknown (host can't be asked) = not listed
+
+audit() { # $1 action, $2 run, $3 brief, $4 target (terminal=… | pid=… procstart=…), $5 result
+  mkdir -p "$STATE" && printf '%s %s run=%s brief=%s %s result=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "${3:--}" "$4" "$5" >> "$STATE/audit.log"
+}
+
+signal_procs() { # $1 = TERM | KILL, $2 = agent_procs lines, $3 run, $4 brief; each re-checked first
+  local pid ps r
+  printf '%s\n' "$2" | while read -r pid ps _; do
+    [ -n "$pid" ] || continue
+    if ! same_proc "$pid" "$ps"; then r="skipped: no longer that process"
+    elif kill "-$1" "$pid" 2>/dev/null; then r="$1 sent"
+    else r="$1 failed"; fi
+    audit signal "$3" "$4" "pid=$pid procstart=$ps" "$r"
+  done
+}
+
+# Stop agent processes that should have gone (alive_of lines): TERM, up to 10 s, then
+# KILL, each re-checked just before its signal. Prints "<pid> <what happened>" for each.
+reap_left() { # $1 = alive_of lines, $2 run, $3 brief
+  local hard i=0 pid
+  signal_procs TERM "$1" "$2" "$3"
+  while [ $i -lt 10 ] && [ -n "$(alive_of "$1")" ]; do sleep 1; i=$((i + 1)); done
+  hard=$(alive_of "$1")
+  [ -n "$hard" ] && signal_procs KILL "$hard" "$2" "$3" && sleep 1
+  for pid in $(printf '%s\n' "$1" | awk '{print $1}'); do
+    if has_pid "$pid" "$(alive_of "$hard")"; then echo "$pid still running after KILL"
+    elif has_pid "$pid" "$hard"; then echo "$pid stopped (KILL)"
+    else echo "$pid stopped (TERM)"; fi
+  done
+}
+
+# Close a run's terminal and make sure its agent went: note the run's Claude
+# processes first, close (its error kept), then wait up to JARVIS_STOP_GRACE s for
+# the terminal to leave the host's list and each process to exit. One still there
+# is stopped, TERM then KILL after 10 s (JARVIS_REAP=1), or named (0). Prints what
+# happened as one fragment of the caller's line; fails when the close did.
+stop_run() { # $1 = run, $2 = merged | closed, $3 = why
+  local run=$1 brief procs err out ok=0 i=0 left pid r
+  brief=$(run_get "$run" brief)
+  procs=$(agent_procs "$run")
+  if err=$(host close "$run" 2>&1 >/dev/null); then
+    ok=1; out="closed $(short "$run")"
+    audit close "$run" "$brief" "terminal=$run" ok
+  else
+    err=$(printf '%s\n' "$err" | sed -e 's/^jarvis: //' | grep -v '^[[:space:]]*$' | head -n 1)
+    out="close FAILED for $(short "$run"): ${err:-the host gave no reason}"
+    audit close "$run" "$brief" "terminal=$run" "FAILED: ${err:-no reason given}"
+  fi
+  if [ $ok = 1 ]; then
+    while [ $i -lt "$JARVIS_STOP_GRACE" ] && { term_listed "$run" || [ -n "$(alive_of "$procs")" ]; }; do
+      sleep 1; i=$((i + 1))
+    done
+    term_listed "$run" && out="$out · terminal $(short "$run") still listed after $JARVIS_STOP_GRACE s"
+  fi
+  left=$(alive_of "$procs")
+  if [ -n "$left" ] && [ "$JARVIS_REAP" = 1 ]; then
+    while read -r pid r; do
+      [ -n "$pid" ] && out="$out · worker pid $pid didn't exit on close: $r"
+    done <<EOF
+$(reap_left "$left" "$run" "$brief")
+EOF
+  elif [ -n "$left" ]; then
+    for pid in $(printf '%s\n' "$left" | awk '{print $1}'); do
+      out="$out · worker pid $pid didn't exit on close: still running (JARVIS_REAP=0; stop it: kill $pid)"
+      audit list "$run" "$brief" "pid=$pid procstart=$(lstart_of "$pid")" "left running (JARVIS_REAP=0)"
+    done
+  fi
+  run_set "$run" state "$2" ended "$(now)" reason "$3" outcome "$out"
+  echo "$out"
+  [ $ok = 1 ]
+}
+
+# Every worker terminal of a brief that may still be open: its running runs, then,
+# for briefs spawned before the registry, the started: terminal and the Running
+# workers line (read before merge drops it), unless the registry says it has ended.
+brief_runs() { # $1 = brief
+  { runs_of "$1" running
+    brief_terminal "$1"
+    running_lines | awk -v b="$1" '{n = split($0, f, " · "); for (i = 1; i <= n; i++) if (f[i] == b) print}' \
+      | sed -n 's/.*· term \([^ ]*\) ·.*/\1/p'
+  } | awk 'NF && !seen[$0]++' | while read -r r; do
+    case "$(run_get "$r" state)" in ""|running) echo "$r" ;; esac
+  done
+}
+
 # ---------------------------------------------------------------- merge
 
 listed_files() { # the paths under "## Files" in a handoff
@@ -795,7 +1077,7 @@ changed_paths() { # every changed/untracked path, renames as their new path
 
 cmd_merge() {
   local ho="" check=0 msg="" outcome="" push="$JARVIS_PUSH" keep=0 force=0
-  local status brief agent files f bad=0 other title dest trailer sha term old_tracked=0 closed line
+  local status brief agent files f bad=0 other title dest trailer sha runs r frag note old_tracked=0 closed line
   while [ $# -gt 0 ]; do
     case "$1" in
       --check) check=1; shift ;;
@@ -836,7 +1118,7 @@ cmd_merge() {
 
   mkdir -p "$H/merged"
   dest="$H/merged/$(basename "$ho")"
-  term=$(brief_terminal "$brief")
+  runs=""; [ -n "$brief" ] && runs=$(brief_runs "$brief")
   [ -n "$brief" ] && open_drop "$brief"
   open_drop "$(basename "$ho")"
   git ls-files --error-unmatch -- "$ho" >/dev/null 2>&1 && old_tracked=1
@@ -866,15 +1148,30 @@ cmd_merge() {
 
   if [ "$push" = 1 ]; then
     if git push -q 2>/dev/null; then line="$line · pushed"; else line="$line · push FAILED (run git push)"; fi
+  else
+    line="$line · not pushed"
   fi
-  closed=0
-  if [ $keep = 0 ] && [ -n "$term" ] && [ -n "$HOST" ]; then
-    host close "$term" && line="$line · closed $(short "$term")" && closed=1
+  closed=0; note=""
+  if [ -z "$runs" ]; then
+    note="no worker terminal recorded for ${brief:-this handoff (it names no brief)}: nothing closed. If one is open: handoffs/bin/jarvis close <terminal>"
+  elif [ $keep = 1 ]; then
+    note="--keep-open: nothing closed; still open: $(printf "%s\n" "$runs" | tr "\n" " "). Later: handoffs/bin/jarvis close <terminal>"
+  elif [ -z "$HOST" ]; then
+    note="no host here, so nothing closed: $(printf "%s\n" "$runs" | tr "\n" " ")"
+  else
+    closed=1
+    for r in $runs; do
+      # a terminal from before the registry gets a record, so the close is verified and kept
+      [ -f "$RUNS/$r" ] || run_set "$r" run "$r" brief "$brief" host "$HOST" state running
+      frag=$(stop_run "$r" merged "merged $sha") || closed=0
+      line="$line · $frag"
+    done
   fi
   if [ -n "$outcome" ] && [ -x "$BIN/jev.sh" ] && [ -n "$brief" ]; then
     "$BIN/jev.sh" outcome "$brief" "$outcome" >/dev/null 2>&1
   fi
   echo "$line · OPEN.md updated in the same commit"
+  [ -n "$note" ] && echo "$note"
   [ -n "$brief" ] && [ -f "$brief" ] && merge_leftovers "$brief" "$dest" "$closed"
   return 0
 }
@@ -892,10 +1189,251 @@ cmd_send() {
 }
 
 cmd_close() { # a worker given up on; a merged one is closed by merge
-  [ -n "${1:-}" ] || die "usage: jarvis close <terminal>"
-  host close "$1" || die "couldn't close $1 on $HOST"
-  open_drop "term $1 "
-  echo "closed $(short "$1") and dropped it from Running workers"
+  local run=${1:-} brief="" b out
+  [ -n "$run" ] || die "usage: jarvis close <terminal>"
+  need_host
+  [ "$run" = "$(jarvis_terminal)" ] && die "$run is Jarvis's own terminal"
+  if [ ! -f "$RUNS/$run" ]; then
+    # a terminal from before the registry: its brief from Running workers or a started: line
+    brief=$(running_lines | grep -F "· term $run ·" | grep -o "$H/briefs/[^ ]*\.md" | head -n 1)
+    if [ -z "$brief" ]; then
+      for b in "$H"/briefs/*.md; do [ "$(brief_terminal "$b")" = "$run" ] && { brief=$b; break; }; done
+    fi
+    run_set "$run" run "$run" brief "$brief" host "$HOST" state running
+  fi
+  if out=$(stop_run "$run" closed "jarvis close"); then
+    open_drop "term $run "
+    echo "$out · dropped it from Running workers"
+  else
+    echo "$out"; exit 1
+  fi
+}
+
+# ---------------------------------------------------------------- doctor
+
+# What is alive in this checkout and why it is still there, from Claude Code's
+# session records (claude_here: one ps), one host list and the run registry.
+# Read-only. --apply acts only on what Jarvis positively owns and has finished: a
+# merged/closed run's open terminal (stop_run), a finished worker's verified agent
+# whose terminal is gone (TERM, then KILL), a running run whose terminal is gone and
+# that has no agent (marked lost). A busy agent, a session that isn't a worker's and
+# a terminal nobody recorded are reported, never touched. Each action is printed and
+# audited. `status` (and so `start`) prints the --quiet line: the reconciliation
+# after Jarvis crashes or restarts.
+
+doc_merged() { # $1 = brief: its handoff in handoffs/merged/, if any
+  grep -l "^brief:[[:space:]]*$1[[:space:]]*\$" "$H"/merged/*.md 2>/dev/null | head -n 1
+}
+
+doc_up() { # $1 = a start time from lstart_of: how long ago, e.g. 3d04h, 2h05m, 7m
+  local e s
+  e=$(start_epoch "$1")
+  [ -n "$e" ] || { echo "?"; return; }
+  s=$(( $(now) - e ))
+  if [ $s -ge 86400 ]; then printf '%dd%02dh' $((s / 86400)) $((s % 86400 / 3600))
+  elif [ $s -ge 3600 ]; then printf '%dh%02dm' $((s / 3600)) $((s % 3600 / 60))
+  else printf '%dm' $((s / 60)); fi
+}
+
+# "<pid> <procstart> <session> <status> <class> <run> <brief> <terminal>" for each
+# claude_here line, "-" for an empty field; class is jarvis | running | finished |
+# other. The run is the registry's. A worker from before the registry has none: its
+# brief comes from its transcript, its terminal from its prompt hook or brief. Jarvis
+# is the session its prompt hook recorded or, when this runs in Jarvis's terminal,
+# the Claude process above this command.
+doc_procs() { # $1 = Jarvis's terminal
+  local jt=$1 jsid="" anc="" pid ps sid st t b r n class term
+  have jq && jsid=$(jq -r '.session_id // empty' "$STATE/session.json" 2>/dev/null)
+  [ -n "$jt" ] && [ -n "$HOST" ] && [ "$("${HOST}_self" 2>/dev/null)" = "$jt" ] && anc=" $(ancestors)"
+  claude_here | while read -r pid ps sid st; do
+    t=$(grep -lxF "$sid" "$STATE"/sessions/* 2>/dev/null | head -n 1); t=${t##*/}
+    r=""; b=""; class=other; term=""
+    if [ "$sid" = "$jsid" ] || { [ -n "$jt" ] && [ "$t" = "$jt" ]; } || case "$anc" in *" $pid "*) true ;; *) false ;; esac
+    then class=jarvis; term=$jt
+    elif [ -n "$t" ] && run_ok "$t" && [ -f "$RUNS/$t" ]; then r=$t
+    elif b=$(brief_of_session "$sid"); then
+      n=$(runs_of "$b" | wc -l | tr -d ' ')
+      if [ "$n" = 1 ]; then r=$(runs_of "$b"); elif [ "$n" -gt 1 ]; then r=$(run_by_start "$b" "$ps"); fi
+      [ -n "$r" ] || term=${t:-$(brief_terminal "$b")}
+    fi
+    if [ -n "$r" ]; then
+      term=$r; b=$(run_get "$r" brief)
+      case "$(run_get "$r" state)" in merged|closed) class=finished ;; *) class=running ;; esac
+    elif [ -n "$b" ]; then
+      if [ -n "$(doc_merged "$b")" ]; then class=finished; else class=running; fi
+    fi
+    echo "$pid $ps $sid $st $class ${r:--} ${b:--} ${term:--}"
+  done
+}
+
+# "<terminal> <class> <run> <brief>" for each terminal the host lists; class is
+# jarvis | running | finished | unknown. With no run record, a terminal is a
+# worker's when a brief's started: line or a Running workers line names it.
+doc_terms() { # $1 = host list, $2 = Jarvis's terminal
+  local id b legacy
+  legacy=$(grep -H '^started:.*terminal:' "$H"/briefs/*.md 2>/dev/null \
+    | sed -n 's/^\([^:]*\):started:.*terminal:[[:space:]]*\([^ ]*\).*/\2 \1/p')
+  printf '%s\n' "$1" | while read -r id; do
+    [ -n "$id" ] || continue
+    if [ "$id" = "$2" ]; then echo "$id jarvis - -"; continue; fi
+    if run_ok "$id" && [ -f "$RUNS/$id" ]; then
+      b=$(run_get "$id" brief)
+      case "$(run_get "$id" state)" in
+        merged|closed) echo "$id finished $id ${b:--}" ;;
+        running) echo "$id running $id ${b:--}" ;;
+        *) echo "$id unknown $id ${b:--}" ;; # a lost run's terminal back in the list: look, don't touch
+      esac
+      continue
+    fi
+    b=$(printf '%s\n' "$legacy" | awk -v t="$id" '$1 == t {print $2}' | tail -n 1)
+    [ -n "$b" ] || b=$(running_lines | grep -F "· term $id ·" | grep -o "$H/briefs/[^ ]*\.md" | head -n 1)
+    if [ -z "$b" ]; then echo "$id unknown - -"
+    elif [ -n "$(doc_merged "$b")" ]; then echo "$id finished - $b"
+    else echo "$id running - $b"; fi
+  done
+}
+
+doc_lost() { # $1 = host list, $2 = doc_procs lines: "<run> <brief>" for each running run with neither
+  local f r
+  for f in "$RUNS"/*; do
+    [ -f "$f" ] || continue
+    r=${f##*/}
+    [ "$(run_get "$r" state)" = running ] || continue
+    printf '%s\n' "$1" | grep -qxF "$r" && continue
+    printf '%s\n' "$2" | awk -v r="$r" '$6 == r {f = 1} END {exit !f}' && continue
+    echo "$r $(run_get "$r" brief)"
+  done
+}
+
+doc_locks() { # the held and queued leases of this checkout's classes and the machine's
+  have perl || return 0
+  (cmd_resources) 2>/dev/null | J_ROOT="$ROOT" J_PHYS=$(pwd -P) awk '
+    /^[^ ]/ { i = index($0, " · "); w = (i ? substr($0, i + length(" · ")) : "")
+              on = (w == "machine" || w == ENVIRON["J_ROOT"] || w == ENVIRON["J_PHYS"]); head = $0; shown = 0; next }
+    on && ($0 ~ /^  slot [0-9]+  held/ || $0 ~ /^  queue [1-9]/) { if (!shown) print "  " head; shown = 1; print "  " $0 }'
+}
+
+doc_brief() { if [ "$1" = - ]; then echo "?"; else basename "$1" .md; fi; } # $1 = brief path or -
+
+cmd_doctor() {
+  local apply=0 quiet=0 jt open="" listed=0 procs terms="" lost="" titles="" anc n1 n2 n3 out
+  local pid ps sid st class run brief term id r s
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --apply) apply=1 ;;
+      --quiet) quiet=1 ;;
+      *) die "usage: jarvis doctor [--apply | --quiet]" ;;
+    esac
+    shift
+  done
+  jt=$(jarvis_terminal)
+  [ -n "$HOST" ] && open=$(host list 2>/dev/null) && listed=1
+  procs=$(doc_procs "$jt")
+  if [ $listed = 1 ]; then terms=$(doc_terms "$open" "$jt"); lost=$(doc_lost "$open" "$procs"); fi
+  n1=$(printf '%s\n' "$procs" | awk '$5 == "finished"' | wc -l | tr -d ' ')
+  n2=$(printf '%s\n' "$terms" | awk '$2 == "finished"' | wc -l | tr -d ' ')
+  n3=$(printf '%s\n' "$lost" | awk 'NF' | wc -l | tr -d ' ')
+
+  if [ $quiet = 1 ]; then
+    [ $((n1 + n2 + n3)) -gt 0 ] || return 0
+    out=""
+    [ "$n1" -gt 0 ] && out="$out · $n1 finished worker$([ "$n1" = 1 ] || echo s) still running"
+    [ "$n2" -gt 0 ] && out="$out · $n2 finished terminal$([ "$n2" = 1 ] || echo s) open"
+    [ "$n3" -gt 0 ] && out="$out · $n3 lost run$([ "$n3" = 1 ] || echo s)"
+    echo "doctor: ${out# · } — handoffs/bin/jarvis doctor"
+    return 0
+  fi
+
+  echo "agent processes (Claude, in this checkout):"
+  [ -n "$procs" ] || echo "  none"
+  printf '%s\n' "$procs" | while read -r pid ps sid st class run brief term; do
+    [ -n "$pid" ] || continue
+    printf '  pid %s · up %s · %s · session %s · ' "$pid" "$(doc_up "$ps")" "${st#-}" "$(short "$sid")"
+    case "$class" in
+      jarvis) echo "Jarvis" ;;
+      other) echo "not a worker (left alone)" ;;
+      running|finished)
+        [ "$class" = finished ] && printf 'worker, FINISHED' || printf 'worker, running'
+        printf ' · %s · ' "$(doc_brief "$brief")"
+        if [ "$run" != - ]; then printf 'run %s (%s)' "$(short "$run")" "$(run_get "$run" state)"
+        else printf 'no run record%s' "$([ "$class" = finished ] && echo ', handoff merged')"; fi
+        case "$st" in busy|shell) [ "$class" = finished ] && printf ' · %s: left alone' "$st" ;; esac
+        echo ;;
+    esac
+  done
+
+  echo "terminals${HOST:+ on $HOST}:"
+  if [ $listed = 0 ]; then
+    echo "  the host can't be asked${HOST:- (no host)}: terminals and lost runs not checked"
+  else
+    [ -n "$terms" ] || echo "  none"
+    printf '%s\n' "$terms" | awk '$2 == "unknown"' | grep -q . && type "${HOST}_titles" >/dev/null 2>&1 \
+      && titles=$(host titles 2>/dev/null)
+    printf '%s\n' "$terms" | while read -r id class run brief; do
+      [ -n "$id" ] || continue
+      printf '  %s · ' "$(short "$id")"
+      case "$class" in
+        jarvis) echo "Jarvis" ;;
+        running) echo "worker, running · $(doc_brief "$brief")$([ "$run" = - ] && echo ' · no run record')" ;;
+        finished) echo "FINISHED but open · $(doc_brief "$brief") · $(if [ "$run" = - ]; then echo 'no run record, handoff merged'; else run_get "$run" state; fi)" ;;
+        *) printf 'unknown (left alone)%s' "$([ "$run" != - ] && echo " · run $(run_get "$run" state) · $(doc_brief "$brief")")"
+           s=$(printf '%s\n' "$titles" | awk -F '\t' -v t="$id" '$1 == t {print $2; exit}')
+           [ -n "$s" ] && printf ' · "%s"' "$s"
+           echo ;;
+      esac
+    done
+  fi
+
+  echo "registry:"
+  if [ -n "$lost" ]; then
+    printf '%s\n' "$lost" | while read -r r brief; do
+      [ -n "$r" ] && echo "  run $(short "$r") · lost: running, but its terminal is gone and no agent of it is alive · $(doc_brief "${brief:--}")"
+    done
+  elif [ $listed = 1 ]; then echo "  no lost runs"
+  else echo "  not checked (no host list)"; fi
+
+  out=$(cmd_leftovers --quiet)
+  echo "leftovers:"; if [ -n "$out" ]; then printf '%s\n' "$out" | sed 's/^/  /'; else echo "  none"; fi
+  out=$(doc_locks)
+  echo "locks:"; if [ -n "$out" ]; then printf '%s\n' "$out"; else echo "  none held or queued here or machine-wide"; fi
+
+  if [ $apply = 0 ]; then
+    [ $((n1 + n2 + n3)) -gt 0 ] && echo "act on the FINISHED and lost ones (nothing else is touched): handoffs/bin/jarvis doctor --apply"
+    return 0
+  fi
+
+  # 1. a finished run's terminal still open: close it; stop_run stops its agent if it survives
+  anc=" $(ancestors)"
+  printf '%s\n' "$terms" | while read -r id class run brief; do
+    [ "$class" = finished ] || continue
+    s=$(printf '%s\n' "$procs" | awk -v t="$id" '$8 == t && ($4 == "busy" || $4 == "shell") {print $1}' | tr '\n' ' ')
+    if [ -n "$s" ]; then echo "doctor: left $(short "$id") open: its agent is busy (pid ${s% })"; continue; fi
+    if [ "$run" = - ]; then
+      run_set "$id" run "$id" brief "$brief" host "$HOST" state running
+      s=merged
+    else s=$(run_get "$id" state); fi
+    echo "doctor: $(stop_run "$id" "$s" "jarvis doctor --apply" </dev/null) ($(doc_brief "$brief"), finished)"
+  done
+  # 2. a finished worker's agent whose terminal is gone: TERM, then KILL
+  printf '%s\n' "$procs" | while read -r pid ps sid st class run brief term; do
+    [ "$class" = finished ] || continue
+    case "$anc" in *" $pid "*) continue ;; esac
+    if [ $listed = 0 ]; then echo "doctor: left finished worker pid $pid: the host can't say whether its terminal is open"; continue; fi
+    [ "$term" != - ] && printf '%s\n' "$open" | grep -qxF "$term" && continue # step 1 had it
+    case "$st" in busy|shell) echo "doctor: left finished worker pid $pid running: it is $st"; continue ;; esac
+    r=$run; [ "$r" != - ] || r=$term
+    reap_left "$pid $ps $sid $st" "$r" "$brief" </dev/null | while read -r pid s; do
+      echo "doctor: finished worker pid $pid ($(doc_brief "$brief"), terminal gone): $s"
+    done
+  done
+  # 3. a running run with no terminal and no agent: lost, if that is still so
+  printf '%s\n' "$lost" | while read -r r brief; do
+    [ -n "$r" ] || continue
+    if term_listed "$r" || [ -n "$(agent_procs "$r")" ]; then echo "doctor: left run $(short "$r"): it came back"; continue; fi
+    run_set "$r" state lost ended "$(now)" reason "jarvis doctor --apply: terminal gone, no agent alive"
+    audit lost "$r" "${brief:--}" "terminal=$r" "marked lost"
+    echo "doctor: marked run $(short "$r") lost ($(doc_brief "${brief:--}")): its terminal is gone and no agent of it is alive"
+  done
 }
 
 # ---------------------------------------------------------------- watch
@@ -1099,6 +1637,89 @@ cmd_usage() {
         | "    \(.model): \(.turns) turns · \(.usd | usd) · $\((.usd / .turns * 1000 | round) / 1000)/turn · avg ctx \((.ctx / .turns / 1000) | round)k")'
 }
 
+# ---------------------------------------------------------------- lock
+
+# Three workers each ran a repo's Docker test suite at once and the Docker VM sat at
+# 264% CPU: no worker can know about another's heavy command. A repo wraps its heavy
+# scripts instead ("test:docker": "handoffs/bin/jarvis lock docker -- vitest run
+# --project docker"), so every caller (any agent, the human, CI) queues for the same
+# lease, shared by every process on the machine. A class is JARVIS_LOCK_<class>=
+# "<scope> <capacity>", scope host (machine-wide) or checkout (this checkout only).
+# The lease is a kernel flock held by the command and everything it starts, so it
+# ends exactly when the last of them does; bin/jarvis-lock.pl has the details. No
+# flag skips it. Needs only perl (macOS ships it; there is no flock(1) here) and
+# works with no OPEN.md, outside any host. Exit 75 when --wait runs out, 2 for a
+# usage or class error, else the command's own status (128+signal when signalled).
+
+lock_die() { echo "jarvis lock: $*" >&2; exit 2; }
+
+lock_spec() { # $1 = class: its "<scope> <capacity>" from jarvis.conf, else the built-in
+  local v
+  eval "v=\${JARVIS_LOCK_$1:-}"
+  [ -n "$v" ] || case "$1" in
+    docker) v="host 1" ;;    # one Docker suite on the whole machine
+    suite) v="checkout 1" ;; # one full test suite per checkout
+  esac
+  printf '%s' "$v"
+}
+
+lock_pl() { # the lease helper beside this script, wherever it was called from
+  local d
+  d=$(dirname "$0")
+  case "$d" in /*) ;; *) d="$JARVIS_CALLER_PWD/$d" ;; esac
+  [ -f "$d/jarvis-lock.pl" ] || lock_die "no $d/jarvis-lock.pl — re-run jarvis:setup (the command was not run)"
+  printf '%s/jarvis-lock.pl' "$d"
+}
+
+cmd_lock() {
+  local class="${1:-}" wait="${JARVIS_LOCK_WAIT:-3600}" reuse=0 spec scope cap extra pl
+  local usage="usage: jarvis lock <class> [--wait <sec>] [--reuse] -- <command…>"
+  case "$class" in ""|-*) lock_die "$usage" ;; esac
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --wait) [ $# -ge 2 ] || lock_die "--wait needs seconds. $usage"; wait=$2; shift 2 ;;
+      --reuse) reuse=1; shift ;;
+      --) shift; break ;;
+      -*) lock_die "unknown option $1. $usage" ;;
+      *) break ;;
+    esac
+  done
+  [ $# -gt 0 ] || lock_die "no command to run. $usage"
+  case "$wait" in ""|*[!0-9]*) lock_die "--wait takes whole seconds, not '$wait'" ;; esac
+  case "$class" in *[!a-z0-9_]*) lock_die "class names are a-z, 0-9 and _, not '$class'" ;; esac
+  spec=$(lock_spec "$class")
+  [ -n "$spec" ] || lock_die "no lock class '$class'. Add one to $H/jarvis.conf, e.g. JARVIS_LOCK_$class=\"host 1\" (host = machine-wide, checkout = this checkout only; then how many at once)"
+  read -r scope cap extra <<< "$spec"
+  case "$scope $cap $extra" in
+    "host "[1-9]*" "|"checkout "[1-9]*" ") case "$cap" in *[!0-9]*) scope="" ;; esac ;;
+    *) scope="" ;;
+  esac
+  [ -n "$scope" ] || lock_die "JARVIS_LOCK_$class=\"$spec\" in $H/jarvis.conf isn't \"<host|checkout> <capacity>\", e.g. JARVIS_LOCK_$class=\"host 1\""
+  if ! have perl; then
+    # a CI runner has no other agents to queue behind, and minimal images have no perl
+    case "${CI:-}" in ""|0|false) ;; *)
+      echo "jarvis lock $class: no perl on this CI runner (CI=$CI), so running without the lease" >&2
+      cd "$JARVIS_CALLER_PWD" && exec "$@" ;;
+    esac
+    lock_die "needs perl for the kernel lock, and there's none on PATH; install perl (the command was not run)"
+  fi
+  pl=$(lock_pl) || exit 2
+  JARVIS_CALLER_PWD="$JARVIS_CALLER_PWD" JARVIS_LOCK_DIR="${JARVIS_LOCK_DIR:-$HOME/.jarvis/locks}" \
+    JARVIS_LOCK_POLL="${JARVIS_LOCK_POLL:-1}" JARVIS_REUSE_MAX_AGE="${JARVIS_REUSE_MAX_AGE:-7200}" \
+    JARVIS_REUSE_ENV="${JARVIS_REUSE_ENV:-}" \
+    exec perl "$pl" run "$class" "$scope" "$cap" "$ROOT" "$wait" "$reuse" "$@"
+}
+
+cmd_resources() {
+  local pl
+  case "${1:-}" in ""|--json) ;; *) lock_die "usage: jarvis resources [--json]" ;; esac
+  have perl || lock_die "needs perl"
+  pl=$(lock_pl) || exit 2
+  JARVIS_LOCK_DIR="${JARVIS_LOCK_DIR:-$HOME/.jarvis/locks}" JARVIS_REUSE_MAX_AGE="${JARVIS_REUSE_MAX_AGE:-7200}" \
+    exec perl "$pl" resources "$@"
+}
+
 # ---------------------------------------------------------------- main
 
 cmd="${1:-}"
@@ -1113,6 +1734,9 @@ case "$cmd" in
   close) cmd_close "$@" ;;
   merge) cmd_merge "$@" ;;
   leftovers) cmd_leftovers "$@" ;;
+  lock) cmd_lock "$@" ;;
+  resources) cmd_resources "$@" ;;
+  doctor) cmd_doctor "$@" ;;
   watch) cmd_watch "$@" ;;
   usage) cmd_usage "$@" ;;
   statusline) cmd_statusline ;;

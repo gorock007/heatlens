@@ -66,6 +66,17 @@ Several workers edit the same checkout at once, on separate terminals. So:
 - **Real scan output stays local.** `ps` output and scan reports from this
   Mac carry paths, usernames and argv. Don't commit them. Test fixtures are
   synthetic, or redacted down to `~/…` and placeholder names.
+- **Run heavy suites only through their lock.** Run targeted checks for what
+  you touched (unit tests, lint, typecheck of your modules) freely. Heavy
+  suites (Docker, e2e, the full suite) stall the machine when several
+  workers run them at once, and Jarvis runs them once before merging.
+  - Run one only through the repo's wrapped script, or `handoffs/bin/jarvis
+    lock <class> --reuse -- <command>`. Never bare.
+  - `--reuse` reports a pass on the identical tree instead of running it
+    again. Write logs outside the checkout or into an ignored folder: a new
+    file changes the tree, so nothing is ever reused.
+  - A lock wait is normal. Wait; don't work around it, and never kill the
+    holder.
 - **Verification:** the user builds and launches the menu-bar app with the exact command from the handoff, clicks Scan now, and compares the result with Activity Monitor; `swift test` covers the engine. Every handoff names the command to run and what to look at.
 - **Checks:** run `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build 2>&1 | tail -20 && swift test 2>&1 | tail -30`, then `scripts/run-app.sh --build-only 2>&1 | tail -20` for the app (Xcode is installed but not selected, so `DEVELOPER_DIR` is required) before handing off and report the results. Say
   plainly what you didn't check.  
