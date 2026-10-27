@@ -4,6 +4,9 @@ import HeatLensCore
 /// Synthetic scan modelled on PRD §7, for SwiftUI previews only (the app runs
 /// `PipelineScanService`). Every path, PID and name here is invented; nothing is read from this Mac.
 struct FixtureScanService: ScanService {
+    /// The fixture processes start relative to this, so a rescan sees the same identities.
+    private static let processClock = Date()
+
     func run(duration: TimeInterval, progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> ScanReport {
         let startedAt = Date()
         let seconds = max(1, Int(duration.rounded(.up)))
@@ -11,11 +14,15 @@ struct FixtureScanService: ScanService {
             try await Task.sleep(for: .seconds(1))
             progress(min(TimeInterval(second), duration))
         }
-        return Self.report(startedAt: startedAt, interval: duration)
+        return Self.report(startedAt: startedAt, interval: duration, processClock: Self.processClock)
     }
 
-    static func report(startedAt: Date, interval: TimeInterval) -> ScanReport {
-        let fixture = Fixture(now: startedAt)
+    /// Process start times count back from `processClock` (default `startedAt`); pass the same
+    /// clock to two reports for the same processes. `afterStop` drops the image watcher and lowers
+    /// CPU, for the "Since last scan" preview.
+    static func report(startedAt: Date, interval: TimeInterval, processClock: Date? = nil,
+                       afterStop: Bool = false) -> ScanReport {
+        let fixture = Fixture(now: processClock ?? startedAt, afterStop: afterStop)
         let snapshot = ScanSnapshot(startedAt: startedAt, interval: interval, system: fixture.system,
                                     processes: fixture.processes, notices: fixture.notices,
                                     listeningPorts: fixture.listeningPorts, powerAssertions: fixture.powerAssertions)
@@ -25,6 +32,7 @@ struct FixtureScanService: ScanService {
 
 private struct Fixture {
     let now: Date
+    let afterStop: Bool
 
     private static let gib: UInt64 = 1 << 30
     private static let mib: UInt64 = 1 << 20
@@ -99,6 +107,7 @@ private struct Fixture {
 
     var processes: [ProcessSample] {
         [browser, opencode, opencodeWorker, caffeinate, nextServer, nextDev, npm, imageWatcher, worker, windowServer]
+            .filter { !afterStop || $0.identity != imageWatcher.identity }
     }
 
     // MARK: Ports
@@ -133,8 +142,8 @@ private struct Fixture {
                                     compressedBytes: 4 * Self.gib,
                                     swapUsedBytes: 17 * Self.gib / 2, swapTotalBytes: 10 * Self.gib,
                                     swapOutsDelta: 0, pressure: .normal, availablePercent: 41)
-        let perCore = [0.62, 0.55, 0.48, 0.41, 0.30, 0.25, 0.20, 0.14, 0.12, 0.08, 0.05]
-        return SystemSample(coreCount: 11, hostBusyFraction: 3.2 / 11, perCoreBusyFraction: perCore,
+        let perCore = [0.62, 0.55, 0.48, 0.41, 0.30, 0.25, 0.20, 0.14, 0.12, 0.08, 0.05].map { afterStop ? $0 * 1.4 / 3.2 : $0 }
+        return SystemSample(coreCount: 11, hostBusyFraction: (afterStop ? 1.4 : 3.2) / 11, perCoreBusyFraction: perCore,
                             memory: memory, thermalState: .unavailable,
                             pmsetCPUSpeedLimit: nil, pmsetCPUSchedulerLimit: nil)
     }
@@ -150,6 +159,10 @@ private struct Fixture {
     // MARK: Groups
 
     var groups: [ProcessGroup] {
+        allGroups.filter { !afterStop || $0.root != imageWatcher.identity }
+    }
+
+    private var allGroups: [ProcessGroup] {
         [
             ProcessGroup(root: opencode.identity, members: [opencode.identity, opencodeWorker.identity, caffeinate.identity],
                          kind: "opencode", label: "OpenCode agent",
@@ -183,6 +196,10 @@ private struct Fixture {
     // MARK: Findings
 
     var findings: [DiagnosticFinding] {
+        allFindings.filter { !afterStop || !$0.affectedProcesses.contains(imageWatcher.identity) }
+    }
+
+    private var allFindings: [DiagnosticFinding] {
         [
             DiagnosticFinding(
                 title: "OpenCode agent is the top CPU contributor",

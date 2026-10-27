@@ -11,7 +11,12 @@ final class BatchStopRun {
 
     var isRunning: Bool { task != nil && !isFinished }
 
-    func start(_ identities: [ProcessIdentity], stopService: any ProcessStopping) {
+    /// At least one process exited after its SIGTERM.
+    var stoppedAny: Bool { statuses.contains(.finished(.stopped)) }
+
+    /// `onFinish` runs once, after the last status is in, with whether any process was stopped.
+    func start(_ identities: [ProcessIdentity], stopService: any ProcessStopping,
+               onFinish: @escaping (_ stoppedAny: Bool) -> Void = { _ in }) {
         guard task == nil else { return }
         statuses = Array(repeating: .pending, count: identities.count)
         let batch = BatchStop { await stopService.requestStop($0, wait: 3) }
@@ -21,6 +26,7 @@ final class BatchStopRun {
             }
             self?.statuses = final
             self?.isFinished = true
+            onFinish(final.contains(.finished(.stopped)))
         }
     }
 
@@ -38,6 +44,8 @@ struct BatchStopFlowView: View {
     let context: ReportContext
     let stopService: any ProcessStopping
     let onScanAgain: () -> Void
+    /// Told when the run ends with at least one process stopped.
+    let onStopped: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Set<ProcessIdentity>
@@ -46,11 +54,12 @@ struct BatchStopFlowView: View {
     @State private var sent: [LeftoverCandidate] = []
 
     init(leftovers: ProjectLeftovers, context: ReportContext, stopService: any ProcessStopping,
-         onScanAgain: @escaping () -> Void) {
+         onScanAgain: @escaping () -> Void, onStopped: @escaping () -> Void) {
         self.leftovers = leftovers
         self.context = context
         self.stopService = stopService
         self.onScanAgain = onScanAgain
+        self.onStopped = onStopped
         _selected = State(initialValue: Set(leftovers.candidates.map(\.identity)))
     }
 
@@ -131,7 +140,9 @@ struct BatchStopFlowView: View {
         // A double-click can call this twice before SwiftUI re-renders; only the first one acts.
         guard sent.isEmpty, !chosen.isEmpty else { return }
         sent = chosen
-        run.start(sent.map(\.identity), stopService: stopService)
+        run.start(sent.map(\.identity), stopService: stopService) { [onStopped] stoppedAny in
+            if stoppedAny { onStopped() }
+        }
     }
 
     // MARK: Progress and result
@@ -168,7 +179,7 @@ struct BatchStopFlowView: View {
             HStack {
                 Button("Done") { dismiss() }
                 Spacer()
-                Button("Scan again") {
+                Button(run.stoppedAny ? "Rescan to see the difference" : "Scan again") {
                     dismiss()
                     onScanAgain()
                 }
@@ -247,5 +258,6 @@ struct BatchStopFlowView: View {
     let context = ReportContext(report: report)
     let leftovers = LeftoverCandidates.batches(findings: report.findings, groups: report.groups,
                                                processes: report.snapshot.processes)
-    return BatchStopFlowView(leftovers: leftovers[0], context: context, stopService: FixtureStopService(), onScanAgain: {})
+    return BatchStopFlowView(leftovers: leftovers[0], context: context, stopService: FixtureStopService(),
+                             onScanAgain: {}, onStopped: {})
 }

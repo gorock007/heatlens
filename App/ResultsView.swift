@@ -73,7 +73,12 @@ struct ResultsView: View {
     let report: ScanReport
     let settings: SettingsModel
     let stopService: any ProcessStopping
+    /// The results before these, for "Since last scan"; nil after a relaunch or on the first scan.
+    let previousReport: ScanReport?
+    let stoppedSinceLastScan: Bool
     let onScanAgain: () -> Void
+    /// Told when a stop or batch stop ends with at least one process stopped.
+    let onStopped: () -> Void
     let onDone: () -> Void
 
     @State private var selectedProcess: ProcessIdentity?
@@ -81,9 +86,13 @@ struct ResultsView: View {
     @State private var batchTarget: ProjectLeftovers?
 
     private var context: ReportContext {
-        let base = ReportContext(report: report)
-        let visible = Set(visibleFindings(context: base).map(\.id))
+        let visible = Set(visibleFindings.map(\.id))
         return ReportContext(report: report, hiddenFindingIDs: Set(report.findings.map(\.id)).subtracting(visible))
+    }
+
+    private var comparison: ScanComparison? {
+        guard let previousReport else { return nil }
+        return ScanComparison.compare(before: previousReport.result, after: report.result, exclusions: settings.exclusions)
     }
 
     var body: some View {
@@ -97,16 +106,17 @@ struct ResultsView: View {
             }
         }
         .sheet(item: $stopTarget) { target in
-            StopFlowView(target: target, stopService: stopService, onScanAgain: onScanAgain)
+            StopFlowView(target: target, stopService: stopService, onScanAgain: onScanAgain, onStopped: onStopped)
         }
         .sheet(item: $batchTarget) { leftovers in
-            BatchStopFlowView(leftovers: leftovers, context: context, stopService: stopService, onScanAgain: onScanAgain)
+            BatchStopFlowView(leftovers: leftovers, context: context, stopService: stopService,
+                              onScanAgain: onScanAgain, onStopped: onStopped)
         }
     }
 
     @ViewBuilder
     private func resultList(context: ReportContext) -> some View {
-        let visible = visibleFindings(context: context)
+        let visible = visibleFindings
         let findings = visible.filter { $0.severity != .review }
         let leftovers = visible.filter { $0.severity == .review }
         let batchAbove = batchesByFirstFinding(context: context)
@@ -122,6 +132,10 @@ struct ResultsView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let comparison {
+                    SinceLastScanSection(comparison: comparison)
+                }
+
                 OverviewSection(snapshot: report.snapshot)
 
                 if hiddenCount > 0 {
@@ -180,7 +194,7 @@ struct ResultsView: View {
         HStack {
             Button("Done", action: onDone)
             Spacer()
-            Button("Scan again", action: onScanAgain)
+            Button(stoppedSinceLastScan ? "Rescan to see the difference" : "Scan again", action: onScanAgain)
                 .keyboardShortcut(.defaultAction)
         }
     }
@@ -199,26 +213,8 @@ struct ResultsView: View {
         return byFinding
     }
 
-    private func visibleFindings(context: ReportContext) -> [DiagnosticFinding] {
-        report.findings.filter { finding in
-            guard !finding.affectedProcesses.isEmpty else { return true }
-            return !finding.affectedProcesses.allSatisfy { identity in
-                matchesExclusion(identity, context: context)
-            }
-        }
-    }
-
-    private func matchesExclusion(_ identity: ProcessIdentity, context: ReportContext) -> Bool {
-        if let name = context.processes[identity]?.name,
-           settings.excludedProcessNames.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
-            return true
-        }
-        guard let directory = context.project(for: identity)?.directory else { return false }
-        let path = URL(fileURLWithPath: (directory as NSString).expandingTildeInPath).standardizedFileURL.path
-        return settings.excludedProjectPrefixes.contains { prefix in
-            let expanded = URL(fileURLWithPath: (prefix as NSString).expandingTildeInPath).standardizedFileURL.path
-            return path == expanded || path.hasPrefix(expanded.hasSuffix("/") ? expanded : expanded + "/")
-        }
+    private var visibleFindings: [DiagnosticFinding] {
+        settings.exclusions.visibleFindings(report.findings, snapshot: report.snapshot, groups: report.groups)
     }
 }
 
@@ -226,6 +222,7 @@ struct StopFlowView: View {
     let target: StopTarget
     let stopService: any ProcessStopping
     let onScanAgain: () -> Void
+    let onStopped: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var phase: Phase = .confirmation
@@ -233,7 +230,7 @@ struct StopFlowView: View {
     private enum Phase {
         case confirmation
         case stopping
-        case outcome(String)
+        case outcome(String, stopped: Bool)
     }
 
     var body: some View {
@@ -257,7 +254,7 @@ struct StopFlowView: View {
                 Text("HeatLens sends SIGTERM once and does not force-quit.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            case .outcome(let message):
+            case .outcome(let message, let stopped):
                 Text("Stop result")
                     .font(.headline)
                 Text(message)
@@ -265,7 +262,7 @@ struct StopFlowView: View {
                 HStack {
                     Button("Done") { dismiss() }
                     Spacer()
-                    Button("Scan again") {
+                    Button(stopped ? "Rescan to see the difference" : "Scan again") {
                         dismiss()
                         onScanAgain()
                     }
@@ -306,7 +303,8 @@ struct StopFlowView: View {
         phase = .stopping
         Task {
             let outcome = await stopService.requestStop(target.identity, wait: 3)
-            phase = .outcome(StopWording.message(for: outcome, pid: target.identity.pid))
+            phase = .outcome(StopWording.message(for: outcome, pid: target.identity.pid), stopped: outcome == .stopped)
+            if outcome == .stopped { onStopped() }
         }
     }
 }
@@ -352,6 +350,59 @@ private struct EmptyNote: View {
         Text(text)
             .font(.callout)
             .foregroundStyle(.secondary)
+    }
+}
+
+/// "Since last scan (4 min ago)": one row per metric that moved beyond the noise floor and the
+/// groups that are gone, or one line when nothing changed.
+private struct SinceLastScanSection: View {
+    let comparison: ScanComparison
+
+    var body: some View {
+        ResultSection(title: "Since last scan (\(PowerAssertion.durationText(comparison.elapsed)) ago)") {
+            if comparison.isAboutTheSame {
+                EmptyNote("About the same as the last scan.")
+            } else {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+                    if comparison.busyCoresChanged {
+                        let cores = comparison.busyCores
+                        row("CPU", String(format: "%.1f → %.1f cores", cores.before, cores.after))
+                    }
+                    if comparison.memoryPressureChanged {
+                        let pressure = comparison.memoryPressure
+                        row("Memory pressure", "\(Format.pressure(pressure.before)) → \(Format.pressure(pressure.after))")
+                    }
+                    if comparison.swapChanged {
+                        let swap = comparison.swapUsedBytes
+                        row("Swap", "\(Format.bytes(swap.before)) → \(Format.bytes(swap.after))")
+                    }
+                    if comparison.thermalChanged {
+                        let thermal = comparison.thermalState
+                        row("Thermal", "\(Format.thermal(thermal.before)) → \(Format.thermal(thermal.after))")
+                    }
+                    if !comparison.gone.isEmpty {
+                        row("Gone", gone)
+                    }
+                }
+                .font(.callout)
+            }
+        }
+    }
+
+    /// "next dev (my-app), node watch-images.js (portfolio-demo), and 2 more".
+    private var gone: String {
+        var names = comparison.gone.map { group in
+            group.projectName.map { "\(group.label) (\($0))" } ?? group.label
+        }
+        if comparison.moreGoneCount > 0 { names.append("and \(comparison.moreGoneCount) more") }
+        return names.joined(separator: ", ")
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        GridRow(alignment: .firstTextBaseline) {
+            Text(label).foregroundStyle(.secondary)
+            Text(verbatim: value).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -634,6 +685,10 @@ private struct GroupRow: View {
     }
 }
 
+private extension ScanReport {
+    var result: ScanResult { ScanResult(snapshot: snapshot, groups: groups, findings: findings) }
+}
+
 enum Pasteboard {
     static func copy(_ text: String) {
         NSPasteboard.general.clearContents()
@@ -642,9 +697,12 @@ enum Pasteboard {
 }
 
 #Preview("Results") {
+    let firstScan = Date().addingTimeInterval(-4 * 60)
     VStack(alignment: .leading, spacing: 12) {
-        ResultsView(report: FixtureScanService.report(startedAt: Date(), interval: 10),
-                    settings: SettingsModel(), stopService: FixtureStopService(), onScanAgain: {}, onDone: {})
+        ResultsView(report: FixtureScanService.report(startedAt: Date(), interval: 10, processClock: firstScan, afterStop: true),
+                    settings: SettingsModel(), stopService: FixtureStopService(),
+                    previousReport: FixtureScanService.report(startedAt: firstScan, interval: 10),
+                    stoppedSinceLastScan: false, onScanAgain: {}, onStopped: {}, onDone: {})
     }
     .padding(16)
     .frame(width: 300)

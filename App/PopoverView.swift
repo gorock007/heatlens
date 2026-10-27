@@ -23,7 +23,9 @@ struct PopoverView: View {
                     ScanningView(elapsed: elapsed, total: total) { model.cancel() }
                 case .results(let report):
                     ResultsView(report: report, settings: model.settings, stopService: stopService,
-                                onScanAgain: { model.startScan() }, onDone: { model.dismiss() })
+                                previousReport: model.previousReport, stoppedSinceLastScan: model.stoppedSinceLastScan,
+                                onScanAgain: { model.startScan() }, onStopped: { model.recordStop() },
+                                onDone: { model.dismiss() })
                 case .failed(let message):
                     FailedView(message: message, onRetry: { model.startScan() }, onDone: { model.dismiss() })
                 }

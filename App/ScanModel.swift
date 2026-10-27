@@ -17,6 +17,14 @@ final class ScanModel {
 
     private(set) var state: State = .idle(lastScan: nil)
     private(set) var lastScan: Date?
+    /// The results before the latest ones, for "Since last scan". In memory only: HeatLens keeps
+    /// no scan history (FR-10), so a relaunch forgets it.
+    private(set) var previousReport: ScanReport?
+    /// True once a stop since the latest results ended with the process exiting; the next
+    /// results clear it.
+    private(set) var stoppedSinceLastScan = false
+    /// The latest results, kept through Done, a cancel or a failed scan.
+    private var latestReport: ScanReport?
 
     private let service: any ScanService
     let settings: SettingsModel
@@ -74,6 +82,11 @@ final class ScanModel {
         state = .idle(lastScan: lastScan)
     }
 
+    /// A stop or batch stop reported at least one `.stopped`.
+    func recordStop() {
+        stoppedSinceLastScan = true
+    }
+
     /// Plain words for the failed state (FR-13); never a raw error dump.
     static func message(for error: Error) -> String {
         switch error {
@@ -93,7 +106,12 @@ final class ScanModel {
     private func finish(_ newState: State, generation: Int) {
         guard generation == self.generation else { return }
         task = nil
-        if case .results = newState { lastScan = Date() }
+        if case .results(let report) = newState {
+            lastScan = Date()
+            if let latestReport { previousReport = latestReport }
+            latestReport = report
+            stoppedSinceLastScan = false
+        }
         state = newState
         if case .results(let report) = newState { reportFinish(report) } else { reportFinish(nil) }
     }

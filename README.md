@@ -99,6 +99,8 @@ swift run heatlens-probe
 Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; signed and notarized from v1.0.0.
 When one project has several leftovers, one confirmation lists them all with checkboxes and stops
 the selected ones in turn, re-checking each process right before its SIGTERM.
+After a second scan, "Since last scan" shows what changed (CPU, memory pressure, swap, thermal,
+processes gone), kept in memory only.
 
 ## Documentation
 
