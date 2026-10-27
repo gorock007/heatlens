@@ -11,3 +11,4 @@ xcuserdata/
 scratchpad/
 # Release output
 dist/
+.vercel/

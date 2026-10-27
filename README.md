@@ -66,3 +66,7 @@ Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; signed a
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
 - [docs/SCENARIOS.md](docs/SCENARIOS.md)
 - [docs/samples/](docs/samples/) (synthetic [text](docs/samples/report.txt) and [JSON](docs/samples/report.json) reports)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
