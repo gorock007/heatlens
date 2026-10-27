@@ -51,6 +51,15 @@ struct SettingsView: View {
 
                 ThermalAlertSection(settings: settings)
 
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Open HeatLens with ⌃⌥H", isOn: $settings.globalHotkeyEnabled)
+                    if settings.globalHotkeyEnabled, settings.globalHotkeyConflict {
+                        Text("⌃⌥H is already used by another app")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+
                 AgentConnectSection(bundleURL: Bundle.main.bundleURL)
 
                 Text("Settings are stored on this Mac. HeatLens keeps no scan history.")

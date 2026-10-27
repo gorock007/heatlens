@@ -7,13 +7,12 @@ stops, this file must hold everything a fresh session needs: `jarvis watch`
 may `/clear` Jarvis after a long idle.
 
 Jarvis session: cf788b09-038c-480c-b260-e01e536edeef
-Usage band: green (5h 2% used, 16:41)
+Usage band: amber (5h 12% used, 16:55)
 
 ## Questions for the user
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-27 16:52 · claude/claude-opus-5-5 medium · term 4f8455b8-b555-4835-ac6b-b2c6bd7d5fbf · handoffs/briefs/2026-10-27-1721-p10d-global-hotkey.md
 - 2026-10-27 16:52 · claude/claude-opus-5-5 high · term 9a6345ea-6f3c-4822-bcca-8f164c9b1124 · handoffs/briefs/2026-10-27-1720-p10c-before-after.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->

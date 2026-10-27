@@ -29,7 +29,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         open()
     }
 
-    @objc private func toggle() {
+    /// Opens the panel, or closes it when it's open, as the icon and ⌃⌥H do.
+    @objc func toggle() {
         if panel.isVisible { close() } else { open() }
     }
 

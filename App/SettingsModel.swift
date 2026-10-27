@@ -12,6 +12,7 @@ final class SettingsModel {
         static let excludedProcesses = "excludedProcesses"
         static let excludedProjects = "excludedProjects"
         static let thermalAlertsEnabled = "thermalAlertsEnabled"
+        static let globalHotkeyEnabled = "globalHotkeyEnabled"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -29,6 +30,12 @@ final class SettingsModel {
     var thermalAlertsEnabled: Bool {
         didSet { defaults.set(thermalAlertsEnabled, forKey: Key.thermalAlertsEnabled) }
     }
+    /// Opt-in, off by default: ⌃⌥H opens or closes the panel from any app.
+    var globalHotkeyEnabled: Bool {
+        didSet { defaults.set(globalHotkeyEnabled, forKey: Key.globalHotkeyEnabled) }
+    }
+    /// Set by `GlobalHotkey` when ⌃⌥H couldn't be registered, usually because another app holds it.
+    var globalHotkeyConflict = false
     /// True when the user has turned HeatLens notifications off in System Settings.
     private(set) var notificationsDenied = false
 
@@ -43,6 +50,7 @@ final class SettingsModel {
         excludedProcesses = defaults.string(forKey: Key.excludedProcesses) ?? ""
         excludedProjects = defaults.string(forKey: Key.excludedProjects) ?? ""
         thermalAlertsEnabled = defaults.bool(forKey: Key.thermalAlertsEnabled)
+        globalHotkeyEnabled = defaults.bool(forKey: Key.globalHotkeyEnabled)
         refreshLaunchAtLoginStatus()
     }
 

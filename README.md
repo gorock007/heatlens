@@ -91,6 +91,8 @@ swift run heatlens-probe
 - Reports redact home paths and process arguments by default.
 - Optional thermal alert, off by default: when macOS reports serious heat, HeatLens runs one scan
   and posts one notification naming the top culprit, at most every 30 minutes. Nothing runs in between.
+- Optional global shortcut ⌃⌥H, off by default, opens or closes the panel from any app. It needs no
+  Accessibility permission.
 
 ## Status
 
