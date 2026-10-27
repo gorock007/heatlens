@@ -237,13 +237,28 @@
           </div>
           <div>
             <h3>Ask your AI agent</h3>
-            <p>HeatLens ships a read-only MCP server. Settings → Connect to an AI agent copies the setup command for Claude Code or Codex, and then you can ask your agent "why is my Mac hot?". The agent can run a scan or list ports, but it can't stop anything, and reports are always redacted.</p>
-            <div class="sample"><span class="k">Tools</span> scan · ports<br><span class="k">Mode</span> Read-only, redacted</div>
+            <p>HeatLens ships a read-only MCP server. Settings → Connect to an AI agent copies the setup command for Claude Code or Codex, and then you can ask your agent "why is my Mac hot?". The agent can run a scan, list ports or see what's keeping the Mac awake, but it can't stop anything, and reports are always redacted.</p>
+            <div class="sample"><span class="k">Tools</span> scan · ports · awake<br><span class="k">Mode</span> Read-only, redacted</div>
           </div>
           <div>
             <h3>From the terminal</h3>
             <p>The same read-only tool works in a terminal. It ships inside the app at <code>HeatLens.app/Contents/Helpers/heatlens</code>; run a scan or list ports and get the same redacted report as text or JSON.</p>
-            <div class="sample"><code>heatlens scan --seconds 5</code><br><code>heatlens ports --json</code></div>
+            <div class="sample"><code>heatlens scan --seconds 5</code><br><code>heatlens ports --json</code><br><code>heatlens awake</code></div>
+          </div>
+          <div>
+            <h3>What's keeping it awake</h3>
+            <p>When your Mac won't sleep or the display stays on, the results show which process is holding it awake, in which project, and since when: a caffeinate left by a script, a download, a video call. Media and downloads keep a Mac awake on purpose, so this is listed as information, not as a fault.</p>
+            <div class="sample"><span class="k">Prevents idle sleep</span> caffeinate · PID 4120<br><span class="k">Since</span> 14:02 (3 h 12 min)<br><span class="k">Project</span> ~/Projects/portfolio-demo</div>
+          </div>
+          <div>
+            <h3>A heads-up when it runs hot</h3>
+            <p>Optional and off by default. Turn it on in Settings and, when macOS reports serious thermal pressure, HeatLens runs one scan and sends one notification naming the likely culprit, at most every 30 minutes. It listens for macOS's own thermal event, so nothing runs in between. You can also turn on ⌃⌥H to open HeatLens from anywhere.</p>
+            <div class="sample"><span class="k">Your Mac is running hot</span><br>next dev in portfolio-demo · 182% CPU</div>
+          </div>
+          <div>
+            <h3>Clear a project's leftovers</h3>
+            <p>When one project has left several dev servers or workers behind, one confirmation lists them all with a checkbox each. HeatLens stops the ones you keep ticked one at a time, checking each is still the same process right before it signals it. Scan again and Since last scan shows what changed and what's gone. Nothing is stored after you quit.</p>
+            <div class="sample"><span class="k">Since last scan</span> 4 min ago<br><span class="k">CPU</span> 6.1 → 1.4 cores<br><span class="k">Gone</span> next dev (portfolio-demo)</div>
           </div>
         </div>
       </div>
@@ -331,13 +346,14 @@
             <summary>Why doesn't it ask for any permissions?</summary>
             <div class="answer">
               <p>Because it only reads what macOS already lets any app read about running processes: process IDs, parents, start times, executables, CPU and memory counters, and for your own processes the command line and working directory. That is enough to explain most heat and pressure. It does not request Full Disk Access, Accessibility, Screen Recording or an admin password, and it would not learn anything useful from them.</p>
+              <p>The one exception is optional: if you turn on the thermal alert, macOS asks once whether HeatLens may show notifications.</p>
               <p>The flip side is what it can't see: details of root and other users' processes, kernel_task's numbers, the chip temperature, and GPU load. Those places show Not accessible or Unavailable.</p>
             </div>
           </details>
           <details>
             <summary>Does it run in the background?</summary>
             <div class="answer">
-              <p>Only the menu-bar icon. HeatLens has no timers and no polling; the only work it ever does is a scan you started. Measured on the development Mac, the idle app sits at 0.0% CPU with no change in CPU time between samples, and about 18 MB of memory as reported by top. A scan costs about one second of CPU spread over its five to ten seconds. Launch at login is off by default.</p>
+              <p>Only the menu-bar icon. HeatLens has no timers and no polling; it scans when you click Scan now, or once when macOS reports serious heat if you turned on the optional thermal alert. Measured on the development Mac, the idle app sits at 0.0% CPU with no change in CPU time between samples, and about 18 MB of memory as reported by top. A scan costs about one second of CPU spread over its five to ten seconds. Launch at login is off by default.</p>
             </div>
           </details>
           <details>
@@ -349,7 +365,7 @@
           <details>
             <summary>What exactly happens when I click Request stop?</summary>
             <div class="answer">
-              <p>A sheet shows the PID, command, project and measured impact, and warns that stopping a dev server or agent can interrupt tests, edits, builds or active sessions. Cancel is the default. If you click Send SIGTERM, HeatLens re-reads the process from the kernel, checks that the PID still has the same start time and still belongs to you, and sends one SIGTERM. It waits a few seconds and tells you whether the process exited, is still running, had already exited, or had been replaced by another process, in which case nothing is sent. It never escalates to SIGKILL; for that, it points you to Activity Monitor.</p>
+              <p>A sheet shows the PID, command, project and measured impact, and warns that stopping a dev server or agent can interrupt tests, edits, builds or active sessions. Cancel is the default. If you click Send SIGTERM, HeatLens re-reads the process from the kernel, checks that the PID still has the same start time and still belongs to you, and sends one SIGTERM. It waits a few seconds and tells you whether the process exited, is still running, had already exited, or had been replaced by another process, in which case nothing is sent. It never escalates to SIGKILL; for that, it points you to Activity Monitor. When one project has several leftovers, Stop leftovers lists them in one sheet with a checkbox each, and each selected process goes through the same check and single SIGTERM, one at a time.</p>
             </div>
           </details>
           <details>

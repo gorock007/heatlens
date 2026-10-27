@@ -7,7 +7,7 @@ stops, this file must hold everything a fresh session needs: `jarvis watch`
 may `/clear` Jarvis after a long idle.
 
 Jarvis session: cf788b09-038c-480c-b260-e01e536edeef
-Usage band: amber (5h 12% used, 16:55)
+Usage band: amber (5h 22% used, 17:08)
 
 ## Questions for the user
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
@@ -23,7 +23,6 @@ Usage band: amber (5h 12% used, 16:55)
 - v1.1.0 RELEASED 2026-10-27 (https://github.com/gorock007/heatlens/releases/tag/v1.1.0): movable panel (6a), ports (8a), heatlens CLI/MCP bundled at Contents/Helpers/heatlens + Settings connect (7a/7b), report cap (7c). Notarization accepted the nested helper. Site download auto-serves it (releases/latest). 7d site copy merged (OpenCode; needed one correction: printed handoff instead of saving it).
 - 9a keeping-awake MERGED (unreleased). 1.2.0 = 9a + 10a–10d when all merged. AI ruling: explain + propose typed actions only; no free-form command execution; CLI/MCP read-only.
 - Phase 10 rulings (user, 2026-10-27): 10a thermal alert = opt-in/off by default, on rise to serious/critical run ONE scan + notify top culprit, click opens results, ≤1 per 30 min, no polling. 10b stop leftovers = one dialog listing each process with checkboxes, each PID revalidated before its SIGTERM, only rule-flagged leftovers, ≥2 per project. 10c before/after = in memory only; after a stop offer 'Rescan to see the difference'; any scan with a previous one this session shows 'Since last scan' (CPU, memory, swap, thermal, processes gone). 10d hotkey = fixed ⌃⌥H toggles panel, OFF by default, switch in Settings, no new dependency.
-- PHASE 10 ALL MERGED: 10a b1b1f33, 10b 915ab66, 10c (since last scan), 10d 9165a1e. 179 tests pass. NEXT: user click-through of 10a–10d (command below + ⌃⌥H, Stop leftovers (2)…, Settings rows, Scan twice for 'Since last scan'), then release 1.2.0 (scripts/release.sh, docs/RELEASING.md) + site copy for 1.2.0. USER TO VERIFY 10a banner (needs their Allow on the notification prompt): `open -n .build/xcode/Build/Products/Debug/HeatLens.app --args -thermalAlertsEnabled YES -HeatLensSimulateThermal serious` → Allow → banner names top CPU group → click opens panel.
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
 - Phase 2 safety DONE: 2a/2b/2c/2d merged (d009384); review findings all fixed (#5: scripts/with-timeout.sh). Ruling: exclusion also suppresses stop. 2e docs merged (d7cd4bf): PERFORMANCE.md, SCENARIOS.md, samples/. PRD §11 definition of done met in code; scenarios 8 & 9 are manual-only (need the click-through).
 - Phase 3a click-through DONE (docs/CLICKTHROUGH.md): all 10 steps pass; scenarios 6/8/9/11 verified by hand. Remaining unverified: scenario 7 wording (needs a Mac without thermal info), Activity Monitor comparison (user). Driving trick: cua.getApp times out on LSUIElement apps; a CoreGraphics click on the status icon + System Events works.
