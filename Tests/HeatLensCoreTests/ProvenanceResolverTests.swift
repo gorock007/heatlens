@@ -143,12 +143,12 @@ struct ProvenanceResolverTests {
         ]))
     }
 
-    @Test("Processes in one app bundle group together even when launchd parented")
+    @Test("Processes in one app bundle group together even when launchd parented; a known browser is kind browser")
     func appBundleGrouping() throws {
         let groups = ProvenanceResolver.resolve(SyntheticSnapshots.appBundleFamily)
         let chrome = try #require(groups.first(where: { $0.label == "Google Chrome" }))
 
-        #expect(chrome.kind == "app")
+        #expect(chrome.kind == "browser")
         #expect(Set(chrome.members.map(\.pid)) == Set([830, 831, 832]))
         #expect(chrome.project == nil)
         #expect(chrome.confidence == .high)
@@ -185,4 +185,18 @@ struct ProvenanceResolverTests {
         #expect(group.project?.directory == SyntheticSnapshots.home + "/Developer/Orchard")
         #expect(!group.evidence.isEmpty)
     }
+
+    @Test("A PID reused mid-scan (exited process plus its successor) groups without crashing; the live one wins")
+    func reusedPID() throws {
+        let old = SyntheticSnapshots.process(pid: 42, ageHours: 5, name: "old", detailAccess: .processExited)
+        let new = SyntheticSnapshots.process(pid: 42, ageHours: 0.0001, name: "node", executablePath: "/usr/local/bin/node",
+                                             arguments: ["node", SyntheticSnapshots.home + "/Developer/app/worker.js"],
+                                             currentDirectory: SyntheticSnapshots.home + "/Developer/app", cpu: 40)
+        for order in [[old, new], [new, old]] {
+            let groups = ProvenanceResolver.resolve(SyntheticSnapshots.snapshot(order))
+            let members = groups.flatMap(\.members)
+            #expect(members == [new.identity])
+        }
+    }
 }
+

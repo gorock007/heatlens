@@ -2,11 +2,13 @@ import Foundation
 
 /// Turns a flat process snapshot into workload groups using only captured data.
 public enum ProvenanceResolver {
-    public static func resolve(_ snapshot: ScanSnapshot) -> [ProcessGroup] {
+    /// `userRules` (Settings → Custom labels) are checked before the built-in heuristics.
+    public static func resolve(_ snapshot: ScanSnapshot, userRules: [WorkloadRule] = []) -> [ProcessGroup] {
         guard !snapshot.processes.isEmpty else { return [] }
+        let snapshot = withUniquePIDs(snapshot)
 
         let processesByPID = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.pid, $0) })
-        let classifications = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.pid, classify($0)) })
+        let classifications = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.pid, classify($0, userRules: userRules)) })
         let bundles = Dictionary(uniqueKeysWithValues: snapshot.processes.compactMap { process in
             appBundle(for: process).map { (process.pid, $0) }
         })
@@ -131,6 +133,26 @@ public enum ProvenanceResolver {
     }
 }
 
+extension ProvenanceResolver {
+    /// Grouping is keyed by PID. When a PID was reused during the interval the snapshot holds the
+    /// exited process and its successor; keep the one still running (it has the figures), so
+    /// the lookups below never see a duplicate key.
+    static func withUniquePIDs(_ snapshot: ScanSnapshot) -> ScanSnapshot {
+        var chosen: [Int32: ProcessSample] = [:]
+        for process in snapshot.processes {
+            if let existing = chosen[process.pid], existing.detailAccess != .processExited || process.detailAccess == .processExited {
+                continue
+            }
+            chosen[process.pid] = process
+        }
+        guard chosen.count < snapshot.processes.count else { return snapshot }
+        let processes = snapshot.processes.filter { chosen[$0.pid]?.identity == $0.identity }
+        return ScanSnapshot(id: snapshot.id, startedAt: snapshot.startedAt, interval: snapshot.interval, system: snapshot.system,
+                            processes: processes, notices: snapshot.notices, listeningPorts: snapshot.listeningPorts,
+                            powerAssertions: snapshot.powerAssertions)
+    }
+}
+
 private struct Classification {
     let kind: String
     let label: String
@@ -167,9 +189,15 @@ private extension ProvenanceResolver {
     static let packageRunners = Set(["npm", "pnpm", "yarn", "npx"])
     static let devAndBuildKinds = Set(["next dev", "vite", "astro", "webpack", "turbo", "vitest", "jest", "tsc --watch"])
     static let protectedSystemNames = Set(["kernel_task", "windowserver"])
+    /// Coding agents: a package runner under one belongs to the agent's group.
+    static let agentKinds = Set(["claude", "opencode", "gemini", "codex"])
+    static let browserBundleNames = Set(["safari", "google chrome", "google chrome canary", "chromium", "arc", "firefox",
+                                         "firefox developer edition", "microsoft edge", "brave browser", "opera", "vivaldi",
+                                         "orion", "zen", "zen browser"])
+    static let dockerExecutables = Set(["docker", "com.docker.cli", "docker-compose"])
     static let appleServicePrefixes = ["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/"]
 
-    static func classify(_ process: ProcessSample) -> Classification {
+    static func classify(_ process: ProcessSample, userRules: [WorkloadRule] = []) -> Classification {
         let argv = process.arguments ?? []
         let executable = basename(process.executablePath ?? argv.first ?? process.name).lowercased()
         let tokens = argv.map { basename($0).lowercased() }
@@ -194,6 +222,13 @@ private extension ProvenanceResolver {
             )
         }
 
+        let isProtected = process.owner != .currentUser
+            || protectedSystemNames.union(["launchd"]).contains(process.name.lowercased())
+        if !isProtected, let rule = userRules.first(where: { rule in
+            rule.token == executable || rule.token == process.name.lowercased() || tokens.contains(rule.token)
+        }) {
+            return result("custom", label: rule.label, .medium, "your rule: \(rule.token)", "Settings → Custom labels", 95)
+        }
         if executable == "claude" || executable == "claude.exe" || tokens.first == "claude" || tokens.contains("claude")
             || argumentPaths.contains(where: { $0.contains("/@anthropic-ai/claude-code/") }) {
             return result("claude", .high, "claude executable token", "argv token", 90)
@@ -201,14 +236,24 @@ private extension ProvenanceResolver {
         if executable.hasPrefix("opencode") || tokens.contains(where: { $0.hasPrefix("opencode") }) {
             return result("opencode", .high, "opencode executable token", "argv token", 90)
         }
+        if executable == "gemini" || tokens.contains("gemini") || argumentPaths.contains(where: { $0.contains("/@google/gemini-cli/") }) {
+            return result("gemini", label: "Gemini CLI", .high, "gemini executable token", "argv token", 90)
+        }
+        if executable == "codex" || tokens.contains("codex") || argumentPaths.contains(where: { $0.contains("/@openai/codex/") }) {
+            return result("codex", label: "Codex CLI", .high, "codex executable token", "argv token", 90)
+        }
         if tokens.first?.hasPrefix("next-server") == true || (tokens.contains("next") && argv.contains("dev")) {
             return result("next dev", .high, "next and dev argv tokens", "argv tokens", 100)
         }
-        for tool in ["vite", "astro", "webpack", "turbo", "vitest", "jest"] where tokens.contains(tool) {
-            return result(tool, .high, "\(tool) argv token", "argv token", tool == "vitest" || tool == "jest" ? 98 : 96)
+        for tool in ["vite", "astro", "webpack", "turbo", "vitest", "jest", "pytest"] where tokens.contains(tool) {
+            return result(tool, .high, "\(tool) argv token", "argv token", ["vitest", "jest", "pytest"].contains(tool) ? 98 : 96)
         }
         if tokens.contains("tsc"), argv.contains("--watch") || argv.contains("-w") {
             return result("tsc --watch", .high, "tsc and watch argv tokens", "argv tokens", 96)
+        }
+        if dockerExecutables.contains(executable) {
+            let subcommand = dockerSubcommand(argv).map { " " + $0 } ?? ""
+            return result("docker cli", label: "docker" + subcommand, .high, "\(executable) executable", "executable name", 80)
         }
         if packageRunners.contains(executable) || tokens.first.map(packageRunners.contains) == true {
             return result("package runner", label: executable, .medium, "\(executable) executable", "executable name", 60)
@@ -226,15 +271,85 @@ private extension ProvenanceResolver {
             }
             return result("unknown", label: processName(process), .low, "node executable without script evidence", "executable name", 0, anchor: false)
         }
-
         let protectedNames = protectedSystemNames.union(["launchd"])
         if process.owner == .root || protectedNames.contains(process.name.lowercased()) || protectedNames.contains(executable) {
             return result("system", label: processName(process), process.owner == .root ? .high : .medium, process.name, "owner and process name", 20)
         }
-        if appBundle(path: process.executablePath) != nil {
+        if executable.hasPrefix("python") {
+            if let script = argv.dropFirst().first(where: { $0.lowercased().hasSuffix(".py") }) {
+                return result("python script", label: "python \(basename(script))", .medium, basename(script), "argv script path", 75)
+            }
+            if let flag = argv.firstIndex(of: "-m"), argv.indices.contains(flag + 1) {
+                let module = argv[flag + 1]
+                return result("python script", label: "python -m \(module)", .medium, module, "argv module", 75)
+            }
+            return result("python", .low, "python executable", "executable name", 30, anchor: false)
+        }
+        if executable == "java" {
+            return javaClassification(argv, result: result)
+        }
+        if let bundle = appBundle(path: process.executablePath) {
+            if browserBundleNames.contains(bundle.name.lowercased()) {
+                return result("browser", label: bundle.name, .high, bundle.path, "browser application bundle", 45, anchor: false)
+            }
             return result("app", label: process.name, .high, process.executablePath ?? process.name, "application executable path", 40, anchor: false)
         }
         return result("unknown", label: processName(process), .low, process.name, "process name; no known tool hint", 0, anchor: false)
+    }
+
+    /// The first argument that is neither an option nor the value of a global option that takes one
+    /// (`docker --context x compose up` → "compose").
+    static func dockerSubcommand(_ argv: [String]) -> String? {
+        let optionsWithValues: Set<String> = ["--context", "-c", "--config", "-H", "--host", "--log-level", "-l", "--tlscacert",
+                                              "--tlscert", "--tlskey"]
+        var index = 1
+        while index < argv.count {
+            let argument = argv[index]
+            if optionsWithValues.contains(argument) {
+                index += 2
+            } else if argument.hasPrefix("-") {
+                index += 1
+            } else {
+                return basename(argument)
+            }
+        }
+        return nil
+    }
+
+    /// `java -jar app.jar` → "java app.jar"; Gradle and Kotlin daemons by main class; otherwise
+    /// the main class's simple name. Skips option values (`-cp x`).
+    static func javaClassification(
+        _ argv: [String],
+        result: (String, String?, Confidence, String, String, Int, Bool) -> Classification
+    ) -> Classification {
+        if let jar = argv.firstIndex(of: "-jar"), argv.indices.contains(jar + 1) {
+            let name = basename(argv[jar + 1])
+            return result("java", "java \(name)", .medium, name, "argv -jar", 70, true)
+        }
+        let optionsWithValues: Set<String> = ["-cp", "-classpath", "--class-path", "-p", "--module-path", "--add-opens", "--add-exports"]
+        var index = 1
+        var mainClass: String?
+        while index < argv.count {
+            let argument = argv[index]
+            if optionsWithValues.contains(argument) {
+                index += 2
+                continue
+            }
+            if !argument.hasPrefix("-") {
+                mainClass = argument
+                break
+            }
+            index += 1
+        }
+        guard let mainClass else { return result("java", nil, .low, "java executable", "executable name", 50, true) }
+        if mainClass.contains("GradleDaemon") || mainClass.contains("org.gradle.") {
+            return result("java", "Gradle daemon", .high, mainClass, "argv main class", 70, true)
+        }
+        if mainClass.contains("org.jetbrains.kotlin.daemon") {
+            return result("java", "Kotlin daemon", .high, mainClass, "argv main class", 70, true)
+        }
+        let simpleName = mainClass.split(separator: ".").last.map(String.init) ?? mainClass
+        return result("java", "java \(simpleName)", .medium, mainClass, "argv main class", 70, true)
     }
 
     static func groupRoot(
@@ -259,7 +374,7 @@ private extension ProvenanceResolver {
         if let ownClassification = classifications[process.pid], ["unknown", "package runner"].contains(ownClassification.kind),
            let nearestAnchor = chain.first(where: { anchors.contains($0.pid) }),
            classifications[nearestAnchor.pid]?.kind == "package runner",
-           let agent = chain.first(where: { ["claude", "opencode"].contains(classifications[$0.pid]?.kind ?? "") }) {
+           let agent = chain.first(where: { agentKinds.contains(classifications[$0.pid]?.kind ?? "") }) {
             return agent.pid
         }
         if let nearestAnchor = chain.first(where: { anchors.contains($0.pid) }) {
@@ -297,7 +412,7 @@ private extension ProvenanceResolver {
         .max { lhs, rhs in
             if lhs.1.priority != rhs.1.priority { return lhs.1.priority < rhs.1.priority }
             return lhs.0.pid > rhs.0.pid
-        } ?? (members[0], classify(members[0]))
+        } ?? (members[0], classifications[members[0].pid] ?? classify(members[0]))
     }
 
     static func presentation(

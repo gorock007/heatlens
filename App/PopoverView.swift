@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// The menu-bar popover (PRD §7): idle, scanning or results. Holds no timers; the only work
-/// happens inside a scan the user started.
+/// The menu-bar popover (PRD §7): idle, scanning or results, or Live mode (PRD-v2 Phase 1).
+/// Holds no timers; the only work happens inside a scan or live session the user started.
 struct PopoverView: View {
+    enum Mode: Hashable { case scan, live }
+
     let model: ScanModel
+    let live: LiveModel
     let stopService: any ProcessStopping
     @State private var showingSettings = false
+    @State private var mode: Mode = .scan
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -13,8 +17,22 @@ struct PopoverView: View {
                 showingSettings.toggle()
             }
 
+            if !showingSettings {
+                Picker("Mode", selection: $mode) {
+                    Text("Scan").tag(Mode.scan)
+                    Text("Live").tag(Mode.live)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .onChange(of: mode) { _, newMode in
+                    if newMode == .scan { live.stop() }
+                }
+            }
+
             if showingSettings {
                 SettingsView(settings: model.settings) { showingSettings = false }
+            } else if mode == .live {
+                LiveView(model: live)
             } else {
                 switch model.state {
                 case .idle(let lastScan):
@@ -43,6 +61,10 @@ struct PopoverView: View {
         }
         .padding(16)
         .frame(width: 300)
+        // New Settings switches take effect at once in a running live session.
+        .onChange(of: showingSettings) { _, isShowing in
+            if !isShowing, live.isRunning { live.start() }
+        }
     }
 }
 
@@ -133,5 +155,7 @@ private struct FailedView: View {
 }
 
 #Preview("Idle") {
-    PopoverView(model: ScanModel(service: FixtureScanService()), stopService: FixtureStopService())
+    let settings = SettingsModel()
+    PopoverView(model: ScanModel(service: FixtureScanService(), settings: settings), live: LiveModel(settings: settings),
+                stopService: FixtureStopService())
 }

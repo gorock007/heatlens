@@ -105,6 +105,7 @@ processes gone), kept in memory only.
 ## Documentation
 
 - [docs/PRD.md](docs/PRD.md)
+- [docs/PRD-v2.md](docs/PRD-v2.md) and [docs/v2/](docs/v2/PLAN.md) (v2 plan, ADRs, compatibility)
 - [docs/RELEASING.md](docs/RELEASING.md)
 - [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
 - [docs/LIMITATIONS.md](docs/LIMITATIONS.md)

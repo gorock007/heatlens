@@ -1,6 +1,7 @@
 # Working in HeatLens
 
-The app lives at the repo root; the product spec is `docs/PRD.md`.
+The app lives at the repo root; the product spec is `docs/PRD.md` (v1, shipped). v2 work follows
+`docs/PRD-v2.md` and the plan in `docs/v2/PLAN.md`.
 
 **Contributing from a clone?** Skip everything about Jarvis and workers below and ignore
 `handoffs/`: it's the owner's build log, not something you maintain. Build and test with the

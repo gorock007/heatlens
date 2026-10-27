@@ -41,9 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         // One model for the app's lifetime, so a running scan and the last result survive a close.
         let model = ScanModel(service: scanService, settings: settings)
+        let live = LiveModel(settings: settings)
         let statusPanel = StatusPanelController {
-            PopoverView(model: model, stopService: stopService)
+            PopoverView(model: model, live: live, stopService: stopService)
         }
+        // Live mode samples only while someone is looking (docs/v2/ADR-0003).
+        statusPanel.onClose = { live.stop() }
         self.statusPanel = statusPanel
         thermalAlerts = ThermalAlertService(model: model) { statusPanel.show() }
         hotkey = GlobalHotkey(settings: settings) { statusPanel.toggle() }

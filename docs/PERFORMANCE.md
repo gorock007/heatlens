@@ -70,6 +70,38 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
    and 0.57–0.58 ms in the debug build (2 runs). Nothing is capped. Measured with
    `.build/release/heatlens-probe --no-fixtures --duration 1` (its `power assertion sampling:` line).
 
+7. **Report cost fix** (2026-10-27, PRD-v2 brief 1a): the text report spent about 1.1 s of CPU
+   compiling regular expressions. `String.range(of:options: .regularExpression)` compiles its
+   pattern on every call, and the credential check called it for every path component. The app
+   built a text and a JSON report after every scan, so it paid that twice. The patterns are now
+   compiled once (`RedactionPatterns`). Release build, about 810 processes, three runs each:
+
+   | Command | Before (user CPU) | After (user CPU) |
+   |---|---|---|
+   | `.build/release/heatlens-probe --report --no-fixtures --duration 1` | 1.21 s | 0.11 s |
+   | `.build/release/heatlens-probe --report --no-fixtures` (5 s) | 1.20–1.22 s, 6.28–6.56 s wall, 15.1–15.7 MB peak | 0.11 s, 5.17 s wall, 13.3 MB peak |
+
+   `RedactorTests` "Both reports for 1,000 processes…" keeps both reports for 1,000 synthetic
+   processes under 1 s in a debug build (0.29 s measured).
+
+8. **Live mode** (2026-10-27, PRD-v2 brief 1e; budget in docs/v2/ADR-0003: ≤ 2% of one core at
+   5 s, < 30 MB footprint growth over 15 minutes). Release build, 5 s interval, hardware sensors
+   and Docker on (one running container), about 800–850 processes. The 15-minute run was on battery:
+
+   | Command | Wall | CPU (user + sys) | Average | Per tick | Peak footprint |
+   |---|---|---|---|---|---|
+   | `/usr/bin/time -l .build/release/heatlens-probe --live 60 --interval 5` | 64.0 s | 0.65 s | 1.0% of one core | median 89.8 ms, max 108.6 ms (13 ticks) | 10.7 MB |
+   | `/usr/bin/time -l .build/release/heatlens-probe --live 900 --interval 5` | 900.9 s | 9.11 s | 1.0% of one core | median 93.3 ms, max 247.9 ms (174 ticks) | 19.4 MB |
+
+   1. Both are within budget: footprint grew about 9 MB between the 1-minute and 15-minute runs.
+      The trend ring stops growing at 150 ticks (12.5 minutes).
+   2. The session auto-paused at 900 s as designed (`auto-paused after 900 s`).
+   3. In the Debug app with the Live view open, `ps -o time=` 30 s apart grew 0.59 s (2.0% of
+      one core, SwiftUI included). After the panel closed, it didn't grow at all in 30 s
+      (docs/CLICKTHROUGH.md L4, L8).
+   4. A tick's per-tick wall time includes the Docker socket round trips (about 15 ms) and the
+      SMC read (about 15 ms). The rest is the process list, grouping and the trend ring.
+
 ## 3. Snapshot cost
 
 No test or probe output prints the cost of building a snapshot, rules and report on their own,

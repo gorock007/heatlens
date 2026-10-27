@@ -7,15 +7,60 @@ struct FixtureScanService: ScanService {
     /// The fixture processes start relative to this, so a rescan sees the same identities.
     private static let processClock = Date()
 
-    func run(duration: TimeInterval, progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> ScanReport {
+    func run(duration: TimeInterval, options: CollectionOptions,
+             progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> ScanReport {
         let startedAt = Date()
         let seconds = max(1, Int(duration.rounded(.up)))
         for second in 1...seconds {
             try await Task.sleep(for: .seconds(1))
             progress(min(TimeInterval(second), duration))
         }
-        return Self.report(startedAt: startedAt, interval: duration, processClock: Self.processClock)
+        let report = Self.report(startedAt: startedAt, interval: duration, processClock: Self.processClock)
+        return ScanReport(snapshot: report.snapshot, groups: report.groups, findings: report.findings,
+                          reportText: report.reportText, reportJSON: report.reportJSON,
+                          hardware: options.hardwareSensors ? Self.hardware(at: startedAt) : Self.hardwareOff(at: startedAt),
+                          docker: options.docker ? Self.docker : nil)
     }
+
+    /// Invented sensor values in the M3 Pro's range, for previews and `-HeatLensFixtures`.
+    static func hardware(at date: Date) -> HardwareSample {
+        HardwareSample(timestamp: date, chip: "Apple M3 Pro", model: "Mac15,6",
+                       cpuTemperature: .available(TemperatureSummary(averageCelsius: 68.4, hottestCelsius: 81.2, sensorCount: 77), from: .smc),
+                       gpuTemperature: .available(TemperatureSummary(averageCelsius: 58.9, hottestCelsius: 63.0, sensorCount: 18), from: .smc),
+                       fans: .available([FanReading(index: 0, rpm: 2314, maxRPM: 6800), FanReading(index: 1, rpm: 2516, maxRPM: 6800)], from: .smc),
+                       systemPowerWatts: .available(21.4, from: .smc),
+                       cpuPowerWatts: .unavailable(.unsupported(reason: "needs per-macOS power tables"), source: .none),
+                       gpuPowerWatts: .unavailable(.unsupported(reason: "needs per-macOS power tables"), source: .none),
+                       thermalState: .fair,
+                       power: PowerContext(source: .ac, hasBattery: true, batteryPercent: 85, isCharging: false, lowPowerMode: false))
+    }
+
+    static func hardwareOff(at date: Date) -> HardwareSample {
+        let off = SensorAvailability.disabled
+        return HardwareSample(timestamp: date, chip: "Apple M3 Pro", model: "Mac15,6",
+                              cpuTemperature: .unavailable(off, source: .smc), gpuTemperature: .unavailable(off, source: .smc),
+                              fans: .unavailable(off, source: .smc), systemPowerWatts: .unavailable(off, source: .smc),
+                              cpuPowerWatts: .unavailable(off, source: .none), gpuPowerWatts: .unavailable(off, source: .none),
+                              thermalState: .fair,
+                              power: PowerContext(source: .battery, hasBattery: true, batteryPercent: 42, isCharging: false, lowPowerMode: true))
+    }
+
+    static let docker = DockerSnapshot(
+        availability: .available, engineVersion: "28.5.1", apiVersion: "1.51",
+        containers: [
+            ContainerSample(containerID: String(repeating: "2b9aeb6c80e3", count: 5) + "d19e", name: "demo-db-1", image: "postgres:17",
+                            state: "running", status: "Up 3 days", createdAt: Date(timeIntervalSinceNow: -3 * 86_400),
+                            labels: ["com.docker.compose.project": "demo", "com.docker.compose.service": "db"],
+                            cpuPercentOfOneCore: 38.5, memoryBytes: 140 << 20, vmCPUCount: 6),
+            ContainerSample(containerID: String(repeating: "a1b2c3d4e5f6", count: 5) + "0123", name: "demo-tests-run-1", image: "node:22",
+                            state: "running", status: "Up 40 seconds", createdAt: Date(timeIntervalSinceNow: -40),
+                            labels: ["com.docker.compose.project": "demo", "com.docker.compose.service": "tests"],
+                            cpuPercentOfOneCore: 212, memoryBytes: 900 << 20, vmCPUCount: 6),
+            ContainerSample(containerID: String(repeating: "ffeeddccbbaa", count: 5) + "9876", name: "build-cache", image: "alpine",
+                            state: "exited", status: "Exited (0) 2 days ago", createdAt: Date(timeIntervalSinceNow: -2 * 86_400),
+                            labels: [:], cpuPercentOfOneCore: nil, memoryBytes: nil, vmCPUCount: nil),
+        ],
+        notices: [])
 
     /// Process start times count back from `processClock` (default `startedAt`); pass the same
     /// clock to two reports for the same processes. `afterStop` drops the image watcher and lowers

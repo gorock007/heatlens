@@ -48,10 +48,11 @@ final class ScanModel {
         generation += 1
         let current = generation
         let service = self.service
+        let options = settings.collectionOptions
         state = .scanning(elapsed: 0, total: duration)
         task = Task {
             do {
-                let report = try await service.run(duration: duration) { elapsed in
+                let report = try await service.run(duration: duration, options: options) { elapsed in
                     Task { @MainActor [weak self] in self?.progress(elapsed, total: duration, generation: current) }
                 }
                 try Task.checkCancellation()

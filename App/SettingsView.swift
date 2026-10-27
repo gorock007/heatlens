@@ -50,6 +50,23 @@ struct SettingsView: View {
                     }
                 }
 
+                MonitoringSourcesSection(settings: settings)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    ExclusionEditor(
+                        title: "Custom labels",
+                        guidance: "One rule per line: token = Label, for example ffmpeg = Video encode. Matches a process name, executable or argument. Never runs anything.",
+                        text: $settings.customLabels
+                    )
+                    let ignored = settings.ignoredLabelLines
+                    if !ignored.isEmpty {
+                        Text("Ignored: " + ignored.joined(separator: " · "))
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 ThermalAlertSection(settings: settings)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -79,6 +96,33 @@ struct SettingsView: View {
                 .keyboardShortcut(.defaultAction)
         }
         .onAppear { settings.refreshLaunchAtLoginStatus() }
+    }
+}
+
+/// The opt-in sources from PRD-v2: both off by default, each says what it touches.
+private struct MonitoringSourcesSection: View {
+    @Bindable var settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Toggle("Hardware sensors (private macOS interfaces)", isOn: $settings.hardwareSensorsEnabled)
+                Text("Reads temperatures, fans and system power from the SMC, read-only and without admin rights. The interface is undocumented and may stop working after a macOS update; HeatLens then shows “Unavailable”.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Toggle("Docker containers", isOn: $settings.dockerEnabled)
+                Text("Lists containers and their CPU and memory through the local Docker socket, read-only. HeatLens never starts Docker or changes a container.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Changes apply to the next scan or live start.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

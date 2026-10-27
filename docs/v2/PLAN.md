@@ -1,0 +1,130 @@
+# HeatLens v2: phased implementation plan
+
+Source: [`docs/PRD-v2.md`](../PRD-v2.md). Audit: [GAP-ANALYSIS.md](GAP-ANALYSIS.md). Decisions:
+[ADR-0001](ADR-0001-hardware-sensors.md) (sensors), [ADR-0002](ADR-0002-docker-adapter.md)
+(Docker), [ADR-0003](ADR-0003-live-monitoring-and-transport.md) (live mode, no local server).
+
+Each brief is small, ends with green `swift build && swift test` plus `scripts/run-app.sh
+--build-only`, and can be reverted alone. New behaviour stays behind a Settings switch that
+defaults to off, or a button the user presses. v1.2.1 behaviour is unchanged until the user opts in.
+
+## Phase 0 — audit and spike ✅
+
+Exit: ADRs, compatibility matrix, sensor demo, no production dependency.
+
+- [x] Gap analysis and baseline benchmark (GAP-ANALYSIS.md)
+- [x] macmon validated on the M3 Pro; native Swift SMC spike matched it (ADR-0001)
+- [x] Docker Engine API probed read-only (ADR-0002)
+- [x] Transport and live-mode decision (ADR-0003)
+- [x] Compatibility matrix (COMPATIBILITY.md)
+- [x] Sensor demo: `heatlens-probe --sensors` (and `--docker`, `--live <s>`), the spike turned into the real provider
+
+## Phase 1 — reliable local monitoring (P0) ✅
+
+Results: [PHASE-1-REPORT.md](PHASE-1-REPORT.md).
+
+Dependency order: 1a → (1b, 1c, 1d in any order) → 1e → 1f → 1g.
+
+### 1a · Report cost fix (gate for live mode) ✅ 1.21 s → 0.11 s CPU per report
+- **Do:** precompile `Redactor`'s regular expressions once (`NSRegularExpression` statics).
+  Keep the patterns and behaviour byte-for-byte.
+- **Accept:** every existing `RedactorTests` passes unchanged. `heatlens-probe --report --duration 1`
+  user CPU drops from ~1.2 s to under 0.3 s on the dev Mac (measured, recorded in PERFORMANCE.md).
+- **Rollback:** revert one file.
+
+### 1b · Hardware and power-context provider ✅
+- **Do:** `HardwareSample` model (nullable readings, each with `SensorAvailability` and `SensorSource`);
+  `HardwareSensorProviding`; `SMCSensorProvider` (ADR-0001); `PowerContext` from IOPowerSources +
+  Low Power Mode; `heatlens-probe --sensors [--samples n]` demo.
+- **Accept:** `SMCKeyData` is 80 bytes (test). SMC value decoding (`flt`, `ui8`/`ui16`/`ui32`,
+  `fpe2`, `sp78`) is tested with byte fixtures. The plausibility filter and averaging are tested.
+  A disabled or failing provider gives `unavailable`, never 0 (test). A live test on this Mac reads
+  CPU and GPU temperature in 10–150 °C and ≥ 1 fan, and is skipped when there is no SMC. The probe output agrees
+  with `macmon pipe` within 1 °C.
+- **Rollback:** additive files only. Nothing calls the provider until 1e/1f.
+
+### 1c · Docker adapter ✅
+- **Do:** `UnixSocketHTTPClient` (GET only, path allowlist, size caps, chunked decoding),
+  `DockerEngineClient`, `ContainerSample`, `DockerAvailability`, `DockerSampler` (two one-shot
+  stats bracketing an interval); `heatlens-probe --docker` demo.
+- **Accept:** HTTP parsing tests (content-length, chunked, truncated, oversized, non-200). JSON
+  fixture decoding, including Compose labels. Container ID validation rejects anything not
+  hex. CPU math tests (100 % = one core, nil when backwards). State mapping for missing socket,
+  ECONNREFUSED, EACCES, bad JSON and old API. A live test lists containers when the socket
+  exists and is skipped otherwise. There is no code path that sends a verb other than GET (test on the
+  request builder).
+- **Rollback:** additive. Off by default.
+
+### 1d · Process tree and heuristics ✅
+- **Do:** recognise browsers (Safari, Chrome, Arc, Firefox, Edge, Brave and their helpers), Python,
+  Java/JVM, Docker CLI / Compose, Gemini CLI and Codex CLI, alongside the existing tools. Recognition rules
+  are data in `WorkloadHeuristics`. User rules in Settings map an argv token or process name to
+  a label (data only, never executed). The process detail view gains a children subtree.
+- **Accept:** a resolver test for each new kind. A user rule beats a built-in rule. A
+  malformed user rule is ignored with a notice. Every existing resolver test still passes.
+- **Rollback:** additive. User rules default to empty.
+
+### 1e · Live monitor engine ✅ 1.0% of one core at 5 s (release engine)
+- **Do:** `LiveMonitor` actor (ADR-0003). It produces a stream of ticks with system, processes (CPU
+  deltas tick to tick), hardware and containers. It has a ring buffer for trends, an interval of
+  2/5/10 s, pause/resume, refresh-now, a 15-min auto-pause, and skips a tick when overrunning.
+- **Accept:** fake-sampler tests for: no work before start or after stop; cancellation leaves no
+  task; deltas match `CPUMath`; PID reuse between ticks is a new process, not a CPU spike;
+  the ring buffer stays bounded; an overrun skips a tick. A synthetic 1,000-process test
+  stays under its time bound. A live test runs 3 ticks against this Mac. Overhead is measured
+  (CPU per tick at 5 s, footprint growth over 15 min) and recorded against the ADR-0003 budget.
+- **Rollback:** additive.
+
+### 1f · Live dashboard UI and switches ✅
+- **Do:** a "Live" mode in the existing panel, in the same visual style. Start/Pause/Refresh now,
+  interval picker, top CPU and memory processes with sparklines, a hardware card (temperatures,
+  fans, system power, CPU/GPU power "Unavailable", each with a source badge), a public-context
+  card (thermal state, memory pressure, power source), and a Docker card. Settings switches:
+  "Hardware sensors (private macOS interfaces)" and "Docker containers", both off. Live stops
+  when the panel closes. Scan results also show the hardware and Docker cards when enabled.
+- **Accept:** builds. A Debug fixture mode shows every availability state. A click-through
+  (docs/CLICKTHROUGH.md) covers start, pause, close-stops and each switch. Idle cost after
+  stopping is back to 0 % (measured).
+- **Rollback:** the switches stay off; reverting the UI files restores v1.2.1.
+
+### 1g · Phase 1 acceptance ✅
+- **Do:** update LIMITATIONS.md, PERFORMANCE.md and COMPATIBILITY.md. Write a changelog entry and a
+  Phase 2 brief.
+- **Exit (PRD-v2):** a live dashboard with refresh controls, low-overhead sampling, accurate
+  metrics, explicit source and availability indicators, and integration tests.
+
+## Phase 2 — project-aware diagnostics and history (P0/P1)
+
+Next-step brief: [PHASE-1-REPORT.md § Next](PHASE-1-REPORT.md#next-phase-2-brief).
+
+- 2a Project roots: stat-only walk to a `.git`/`package.json` root; Compose `working_dir` and bind
+  mounts → project; user mappings; an "Unattributed" bucket.
+- 2b Per-project aggregation. Container CPU is shown as a breakdown of the Docker VM process,
+  never added to it (test).
+- 2c History store: system `libsqlite3`, a high-resolution window plus a rollup, retention setting,
+  "Delete history".
+- 2d Timeline view: thermal, CPU, swap, container starts, test runs.
+- 2e Concurrent expensive-command detection (`npm ci`, `vitest`, `next build`, `docker build`),
+  labelled as inference.
+
+## Phase 3 — explanations, alerts, safe actions (P1)
+
+- 3a Concurrency rules ("three Docker integration tests began within 10 s across two agent trees").
+- 3b Alert policies with hysteresis and cooldown (CPU, thermal, swap, memory, containers).
+- 3c Force quit after a *separate* confirmation (new ADR; v1 omitted it on purpose).
+- 3d Stop a selected container: the first non-GET Docker call (new ADR + security review).
+- 3e Local action audit trail; ignore process/project.
+- Exit: reproduce the FDA multi-worker Docker test scenario.
+
+## Phase 4 — background service and polish (P1/P2)
+
+LaunchAgent helper with XPC (new ADR), adaptive sampling, watchlists, incident export, structured
+logs, crash recovery, Jarvis integration through the existing stdio MCP server.
+
+## Open decisions for the owner
+
+1. **CPU/GPU power.** Phase 1 shows "Unavailable". Getting it means bundling a pinned macmon
+   build (Rust in the release pipeline, a third-party binary in the notarized app). See ADR-0001
+   "Revisit when".
+2. **Defaults.** Hardware sensors and Docker are off by default to keep v1's promises. They could
+   be on by default from v2.0 instead.

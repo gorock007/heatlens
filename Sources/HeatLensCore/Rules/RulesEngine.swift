@@ -150,7 +150,8 @@ private struct RankedFinding {
 
 private extension RulesEngine {
     var activeWorkKinds: Set<String> {
-        ["next dev", "vite", "astro", "webpack", "turbo", "vitest", "jest", "tsc --watch", "claude", "opencode", "superset", "capcut", "app"]
+        ["next dev", "vite", "astro", "webpack", "turbo", "vitest", "jest", "pytest", "tsc --watch", "claude", "opencode", "gemini", "codex",
+         "docker cli", "superset", "capcut", "app", "browser"]
     }
 
     var devServerKinds: Set<String> {
@@ -458,7 +459,7 @@ private extension RulesEngine {
     }
 
     func isScriptWorkload(group: ProcessGroup, root: ProcessSample) -> Bool {
-        if group.kind == "node script" || group.kind == "bun" { return true }
+        if group.kind == "node script" || group.kind == "bun" || group.kind == "python script" { return true }
         let executable = URL(fileURLWithPath: root.executablePath ?? root.name).lastPathComponent.lowercased()
         guard executable.hasPrefix("python") else { return false }
         return root.arguments?.dropFirst().contains(where: { $0.lowercased().hasSuffix(".py") }) == true

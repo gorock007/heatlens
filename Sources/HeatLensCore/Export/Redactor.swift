@@ -427,6 +427,8 @@ private extension Redactor {
 private struct Sanitizer {
     let homeDirectory: String
     let username: String
+    /// Whole words and path components only: user `al` must not turn /usr/local into /usr/loc<user>.
+    let usernamePattern: NSRegularExpression?
     /// Labels built from an argv script name (`node sync.js`) and what they export as
     /// (`node <script>`). The app still shows the real label; only the export hides it.
     let scriptLabels: [(label: String, replacement: String)]
@@ -437,6 +439,10 @@ private struct Sanitizer {
             : homeDirectory
         self.homeDirectory = trimmed
         self.username = URL(fileURLWithPath: trimmed).lastPathComponent
+        self.usernamePattern = username.isEmpty || username == "/"
+            ? nil
+            : RedactionPatterns.compile("(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: username) + "(?![A-Za-z0-9_])",
+                           caseInsensitive: true)
         var labels: [String: String] = [:]
         for group in groups where group.kind.hasSuffix(" script") {
             let tool = String(group.kind.dropLast(" script".count))
@@ -446,19 +452,6 @@ private struct Sanitizer {
         // Longest first, so one label never leaves a fragment of a longer one behind.
         self.scriptLabels = labels.map { ($0.key, $0.value) }.sorted { $0.label.count > $1.label.count }
     }
-
-    /// Option names that carry a secret, with a `=value` or a following value that isn't another flag.
-    static let secretFlag = "-{1,2}[\\w-]*(?:token|key|password|passwd|secret)[\\w-]*(?:=\\S+|\\s+(?!-)\\S+)"
-    /// `API_TOKEN=x`-style environment assignments.
-    static let secretAssignment = "\\b[A-Z_]*(?:TOKEN|KEY|SECRET|PASSWORD)=\\S+"
-    /// A short `-p value` is only a password when the same text names a password option too,
-    /// since `-p 3000` is usually a port.
-    static let passwordContext = "(?i)(?:^|\\s)-{1,2}[\\w-]*pass[\\w-]*"
-    static let shortPasswordFlag = "(?:^|(?<=\\s))-p(?:=|\\s+)(?!-)\\S+"
-    /// Well-known credential prefixes, not glued to a preceding letter or digit (`task-runner` isn't `sk-…`).
-    static let credentialPrefix = "(?<![A-Za-z0-9])(?:gh[po]_[A-Za-z0-9]|xox[abpr]-|sk-[A-Za-z0-9_-]{16}|AKIA[0-9A-Z]{16})"
-    static let longHex = "[0-9a-fA-F]{32,}"
-    static let base64Run = "[A-Za-z0-9+=_-]{32,}"
 
     func text(_ raw: String) -> String {
         var value = raw
@@ -470,19 +463,11 @@ private struct Sanitizer {
         } else if !homeDirectory.isEmpty {
             value = value.replacingOccurrences(of: homeDirectory + "/", with: "~/")
         }
-        if !username.isEmpty, username != "/" {
-            // Whole words and path components only: user `al` must not turn /usr/local into /usr/loc<user>.
-            value = value.replacingOccurrences(
-                of: "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: username) + "(?![A-Za-z0-9_])",
-                with: "<user>",
-                options: [.regularExpression, .caseInsensitive]
-            )
-        }
-        value = value.replacingOccurrences(of: Self.secretFlag, with: "<secret redacted>",
-                                           options: [.regularExpression, .caseInsensitive])
-        value = value.replacingOccurrences(of: Self.secretAssignment, with: "<secret redacted>", options: .regularExpression)
-        if raw.range(of: Self.passwordContext, options: .regularExpression) != nil {
-            value = value.replacingOccurrences(of: Self.shortPasswordFlag, with: "<secret redacted>", options: .regularExpression)
+        value = RedactionPatterns.replacing(usernamePattern, in: value, with: "<user>")
+        value = RedactionPatterns.replacing(RedactionPatterns.secretFlag, in: value, with: "<secret redacted>")
+        value = RedactionPatterns.replacing(RedactionPatterns.secretAssignment, in: value, with: "<secret redacted>")
+        if RedactionPatterns.matches(RedactionPatterns.passwordContext, raw) {
+            value = RedactionPatterns.replacing(RedactionPatterns.shortPasswordFlag, in: value, with: "<secret redacted>")
         }
         return redactingCredentialComponents(value)
     }
@@ -509,18 +494,16 @@ private struct Sanitizer {
 
     static func looksLikeCredential(_ component: String) -> Bool {
         guard component.count >= 4 else { return false }
-        if component.range(of: credentialPrefix, options: .regularExpression) != nil { return true }
-        if component.range(of: longHex, options: .regularExpression) != nil { return true }
+        if RedactionPatterns.matches(RedactionPatterns.credentialPrefix, component)
+            || RedactionPatterns.matches(RedactionPatterns.longHex, component) { return true }
         // Base64-ish: a long unbroken run mixing upper case, lower case and digits.
-        var searchStart = component.startIndex
-        while let run = component.range(of: base64Run, options: .regularExpression, range: searchStart..<component.endIndex) {
-            let text = component[run]
-            if text.contains(where: \.isUppercase), text.contains(where: \.isLowercase), text.contains(where: \.isNumber) {
-                return true
-            }
-            searchStart = run.upperBound
+        guard let base64Run = RedactionPatterns.base64Run else { return false }
+        let runs = base64Run.matches(in: component, range: NSRange(component.startIndex..., in: component))
+        return runs.contains { match in
+            guard let range = Range(match.range, in: component) else { return false }
+            let text = component[range]
+            return text.contains(where: \.isUppercase) && text.contains(where: \.isLowercase) && text.contains(where: \.isNumber)
         }
-        return false
     }
 
     func arguments(_ arguments: [String]?) -> [String]? {
@@ -584,5 +567,41 @@ private struct Sanitizer {
         case .requestStop(let identity):
             RedactedAction(kind: "requestStop", pid: identity.pid, path: nil)
         }
+    }
+}
+
+/// Redaction regular expressions, shared by every report.
+enum RedactionPatterns {
+    // Compiled once: `String.range(of:options: .regularExpression)` compiles its pattern on every
+    // call, which made one report cost about a second of CPU (docs/v2/GAP-ANALYSIS.md §4).
+
+    /// Option names that carry a secret, with a `=value` or a following value that isn't another flag.
+    static let secretFlag = compile("-{1,2}[\\w-]*(?:token|key|password|passwd|secret)[\\w-]*(?:=\\S+|\\s+(?!-)\\S+)",
+                                    caseInsensitive: true)
+    /// `API_TOKEN=x`-style environment assignments.
+    static let secretAssignment = compile("\\b[A-Z_]*(?:TOKEN|KEY|SECRET|PASSWORD)=\\S+")
+    /// A short `-p value` is only a password when the same text names a password option too,
+    /// since `-p 3000` is usually a port.
+    static let passwordContext = compile("(?i)(?:^|\\s)-{1,2}[\\w-]*pass[\\w-]*")
+    static let shortPasswordFlag = compile("(?:^|(?<=\\s))-p(?:=|\\s+)(?!-)\\S+")
+    /// Well-known credential prefixes, not glued to a preceding letter or digit (`task-runner` isn't `sk-…`).
+    static let credentialPrefix = compile("(?<![A-Za-z0-9])(?:gh[po]_[A-Za-z0-9]|xox[abpr]-|sk-[A-Za-z0-9_-]{16}|AKIA[0-9A-Z]{16})")
+    static let longHex = compile("[0-9a-fA-F]{32,}")
+    static let base64Run = compile("[A-Za-z0-9+=_-]{32,}")
+
+    /// The patterns are literals, so a failure is a programming error that the tests catch; nil
+    /// then simply matches nothing.
+    static func compile(_ pattern: String, caseInsensitive: Bool = false) -> NSRegularExpression? {
+        try? NSRegularExpression(pattern: pattern, options: caseInsensitive ? [.caseInsensitive] : [])
+    }
+
+    static func replacing(_ regex: NSRegularExpression?, in value: String, with template: String) -> String {
+        guard let regex else { return value }
+        return regex.stringByReplacingMatches(in: value, range: NSRange(value.startIndex..., in: value), withTemplate: template)
+    }
+
+    static func matches(_ regex: NSRegularExpression?, _ value: String) -> Bool {
+        guard let regex else { return false }
+        return regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
     }
 }

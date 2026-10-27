@@ -23,7 +23,7 @@ enum ScanAssembly {
     static func snapshot(startedAt: Date, before: ProcessCounters, after: ProcessCounters,
                          psBefore: PSTimeSampler.Reading?, psAfter: PSTimeSampler.Reading?, psFailure: String?,
                          hostBefore: HostCounters, hostAfter: HostCounters, state: HostState,
-                         ports: PortReading? = nil, assertions: PowerAssertionReading? = nil) -> ScanSnapshot {
+                         ports: PortReading? = nil, assertions: PowerAssertionReading? = nil, live: Bool = false) -> ScanSnapshot {
         let elapsed = after.monotonicNanoseconds > before.monotonicNanoseconds
             ? after.monotonicNanoseconds - before.monotonicNanoseconds : 0
         var psElapsed: UInt64 = 0
@@ -80,7 +80,8 @@ enum ScanAssembly {
 
         let system = systemSample(hostBefore: hostBefore, hostAfter: hostAfter, state: state)
         let notices = notices(samples: samples, exitedCount: exitedCount, psFailure: psFailure,
-                              elapsed: elapsed, hostBefore: hostBefore, hostAfter: hostAfter, system: system, state: state)
+                              elapsed: elapsed, hostBefore: hostBefore, hostAfter: hostAfter, system: system, state: state,
+                              live: live)
             + portNotices(ports) + assertionNotices(assertions)
         let known = Set(samples.filter { $0.detailAccess != .processExited }.map(\.identity))
         return ScanSnapshot(startedAt: startedAt, interval: TimeInterval(elapsed) / 1e9, system: system,
@@ -173,7 +174,8 @@ enum ScanAssembly {
     }
 
     static func notices(samples: [ProcessSample], exitedCount: Int, psFailure: String?, elapsed: UInt64,
-                        hostBefore: HostCounters, hostAfter: HostCounters, system: SystemSample, state: HostState) -> [String] {
+                        hostBefore: HostCounters, hostAfter: HostCounters, system: SystemSample, state: HostState,
+                        live: Bool = false) -> [String] {
         var notices: [String] = []
         let refused = samples.filter { $0.detailAccess == .permissionDenied }
         let fromPS = refused.filter { $0.measurementSource == .ps }.count
@@ -181,7 +183,10 @@ enum ScanAssembly {
             notices.append("CPU and memory for \(fromPS) root/other-user processes are from ps (10 ms resolution); "
                            + "their command line, working directory and footprint are not accessible.")
         }
-        if let psFailure, !refused.isEmpty {
+        if live, !refused.isEmpty {
+            // Live mode never runs ps (docs/v2/ADR-0003).
+            notices.append("Live mode doesn't sample CPU for \(refused.count) root/other-user processes; Scan now includes them.")
+        } else if let psFailure, !refused.isEmpty {
             notices.append("CPU for \(refused.count) root/other-user processes is unavailable: ps failed (\(psFailure)).")
         } else if refused.count > fromPS {
             notices.append("\(refused.count - fromPS) root/other-user processes have no CPU figure (not readable by libproc or ps).")
@@ -190,7 +195,9 @@ enum ScanAssembly {
             notices.append("kernel_task (pid 0) is not readable by libproc or ps; its CPU counts only in the host total.")
         }
         if exitedCount > 0 {
-            notices.append("\(exitedCount) processes exited during the scan and have no CPU figure.")
+            notices.append(live
+                ? "\(exitedCount) processes exited since the last update."
+                : "\(exitedCount) processes exited during the scan and have no CPU figure.")
         }
 
         if hostDeltas(hostBefore, hostAfter) == nil {

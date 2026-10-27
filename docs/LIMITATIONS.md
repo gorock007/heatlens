@@ -6,7 +6,12 @@
    may not be visible.
 3. `kernel_task` has no numbers. It reports no CPU or memory figures to HeatLens, only its name
    and owning user.
-4. There is no temperature reading. No supported API provides a reliable per-chip temperature.
+4. Temperatures, fans and system power appear only when "Hardware sensors" is turned on in
+   Settings. They come from the SMC, an undocumented interface, and may stop working after a
+   macOS update; HeatLens then shows "Unavailable". The values are averages and maxima of SMC
+   sensor families whose meanings are community-documented, not Apple's. "Hottest" is the
+   hottest sensor read, not a measured die hotspot. Verified on one M3 Pro only
+   (docs/v2/COMPATIBILITY.md).
 5. The thermal state is the OS's coarse state (nominal, fair, serious, critical), not a
    measurement of how hot the Mac is.
 6. There is no GPU percentage. WindowServer CPU is shown as UI/rendering activity instead.
@@ -14,3 +19,19 @@
    footprint, and no `proc_listallpids`. HeatLens ships unsandboxed for this reason.
 8. Flags such as "possible leftover" are not proof. They are review candidates based on
    evidence, and a process may be intentional or doing useful work.
+9. CPU and GPU power are always "Unavailable". On macOS 27 they need per-firmware energy-counter
+   tables (docs/v2/ADR-0001). System power (SMC `PSTR`) is shown instead.
+10. Live mode doesn't sample CPU for root and other-user processes, because it never runs `ps`.
+    Scan now still includes them.
+11. Live mode keeps at most 150 updates of trend history in memory and forgets them when it
+    stops. It pauses itself after 15 minutes and stops when the panel closes.
+12. Docker data needs "Docker containers" on in Settings, and only reads Docker Desktop's local
+    socket (or a `unix://` `DOCKER_HOST`). Colima, OrbStack and Podman are untested. At most 20
+    running containers get CPU and memory per reading.
+13. Container CPU is part of the Docker VM process's CPU, not extra load. Don't add the two.
+    Containers are not yet attributed to projects; Compose labels are shown as evidence only.
+14. Safari and other WebKit content processes run as Apple XPC services and are grouped with
+    macOS user services, not with the browser. Chromium-based browsers and Firefox group correctly.
+15. Custom labels match a process name, executable or argument token exactly (case-insensitive).
+    They never apply to root, other-user or protected system processes.
+

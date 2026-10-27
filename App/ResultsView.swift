@@ -50,6 +50,17 @@ struct ReportContext {
         }
     }
 
+    /// The process's descendants, indented by depth, from this scan's snapshot.
+    func children(of identity: ProcessIdentity) -> String {
+        let live = report.snapshot.processes.filter { $0.detailAccess != .processExited }
+        let tree = ProcessTree.descendants(of: identity.pid, in: live, maxDepth: 4, maxCount: 20)
+        guard !tree.nodes.isEmpty else { return "None" }
+        let lines = tree.nodes.map { node in
+            String(repeating: "  ", count: node.depth - 1) + "\(node.process.name) (PID \(node.process.pid))"
+        }
+        return (lines + (tree.truncated ? ["…"] : [])).joined(separator: "\n")
+    }
+
     func parentChain(for identity: ProcessIdentity) -> String {
         guard let process = processes[identity] else { return Format.notAccessible }
         let byPID = Dictionary(report.snapshot.processes.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
@@ -137,6 +148,12 @@ struct ResultsView: View {
                 }
 
                 OverviewSection(snapshot: report.snapshot)
+                if let hardware = report.hardware, hardware.cpuTemperature.availability != .disabled {
+                    HardwareCard(sample: hardware)
+                }
+                if let docker = report.docker {
+                    DockerCard(snapshot: docker)
+                }
 
                 if hiddenCount > 0 {
                     Label("\(hiddenCount) finding\(hiddenCount == 1 ? "" : "s") hidden by your exclusions",

@@ -9,6 +9,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel: StatusPanel
     private var isDetached = false
+    /// Called whenever the panel closes, so Live mode stops sampling.
+    var onClose: (() -> Void)?
     /// Where the panel's top edge sits: under the icon, or wherever the user dropped it.
     private var anchorTop: CGFloat = 0
 
@@ -64,6 +66,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private func close() {
         panel.orderOut(nil)
         isDetached = false
+        onClose?()
     }
 
     /// Only a user drag sends this; the moves made here to place or resize the panel don't.

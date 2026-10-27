@@ -59,10 +59,11 @@ public struct ScanPipeline: Sendable {
 
     /// Throws whatever the coordinator throws (`CancellationError`, `ScanError`); a task cancelled
     /// after sampling still throws rather than returning a result nobody asked for.
-    public func run(duration: TimeInterval, progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> ScanResult {
+    public func run(duration: TimeInterval, userRules: [WorkloadRule] = [],
+                    progress: @escaping @Sendable (TimeInterval) -> Void) async throws -> ScanResult {
         let snapshot = try await coordinator.scan(duration: duration, progress: progress)
         try Task.checkCancellation()
-        let groups = ProvenanceResolver.resolve(snapshot)
+        let groups = ProvenanceResolver.resolve(snapshot, userRules: userRules)
         let findings = rules.evaluate(snapshot, groups: groups)
         return ScanResult(snapshot: snapshot, groups: groups, findings: findings)
     }

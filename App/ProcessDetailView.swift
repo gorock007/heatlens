@@ -44,6 +44,7 @@ struct ProcessDetailView: View {
         Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 5) {
             row("PID", "\(identity.pid)")
             row("Parent chain", context.parentChain(for: identity))
+            row("Children", context.children(of: identity))
             row("Owner", Format.owner(process?.owner))
             row("Uptime", context.uptime(identity))
             row("Executable", process?.executablePath ?? Format.notAccessible)

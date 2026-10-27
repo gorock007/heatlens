@@ -227,4 +227,39 @@ struct RedactorTests {
             #expect(report.contains("<user> started a scan; <user>'s Mac; final"))
         }
     }
+
+    @Test("Every redaction pattern compiles; one that didn't would silently redact nothing")
+    func patternsCompile() {
+        #expect(RedactionPatterns.secretFlag != nil)
+        #expect(RedactionPatterns.secretAssignment != nil)
+        #expect(RedactionPatterns.passwordContext != nil)
+        #expect(RedactionPatterns.shortPasswordFlag != nil)
+        #expect(RedactionPatterns.credentialPrefix != nil)
+        #expect(RedactionPatterns.longHex != nil)
+        #expect(RedactionPatterns.base64Run != nil)
+    }
+
+    @Test("Both reports for 1,000 processes with long argv take well under a second (patterns are compiled once)")
+    func reportCostIsBounded() throws {
+        let home = SyntheticSnapshots.home
+        let processes = (0..<1_000).map { index in
+            SyntheticSnapshots.process(
+                pid: Int32(2_000 + index), name: "node",
+                executablePath: "/usr/local/bin/node",
+                arguments: ["/usr/local/bin/node", home + "/Developer/project-\(index)/node_modules/.bin/vitest",
+                            "--run", "--reporter=dot", "src/feature/component-\(index).test.ts"],
+                currentDirectory: home + "/Developer/project-\(index)", cpu: Double(index % 7)
+            )
+        }
+        let snapshot = SyntheticSnapshots.snapshot(processes)
+        let groups = ProvenanceResolver.resolve(snapshot)
+        let findings = RulesEngine().evaluate(snapshot, groups: groups)
+        let clock = ContinuousClock()
+        let elapsed = try clock.measure {
+            _ = Redactor.textReport(snapshot, groups: groups, findings: findings, homeDirectory: home)
+            _ = try Redactor.jsonReport(snapshot, groups: groups, findings: findings, homeDirectory: home)
+        }
+        // Before the fix the same work took several seconds in a debug build.
+        #expect(elapsed < .seconds(1), "took \(elapsed)")
+    }
 }

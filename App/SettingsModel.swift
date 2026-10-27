@@ -4,6 +4,21 @@ import Observation
 import ServiceManagement
 import UserNotifications
 
+/// The opt-in sources a scan or live session reads, captured on the main actor.
+struct CollectionOptions: Sendable {
+    var hardwareSensors = false
+    var docker = false
+    var userRules: [WorkloadRule] = []
+
+    var hardwareProvider: any HardwareSensorProviding {
+        hardwareSensors ? SMCSensorProvider() : DisabledHardwareProvider()
+    }
+
+    var dockerSampler: any DockerSampling {
+        docker ? DockerEngineSampler() : DisabledDockerSampler()
+    }
+}
+
 /// User-controlled preferences only. HeatLens stores no scan history.
 @MainActor @Observable
 final class SettingsModel {
@@ -13,6 +28,10 @@ final class SettingsModel {
         static let excludedProjects = "excludedProjects"
         static let thermalAlertsEnabled = "thermalAlertsEnabled"
         static let globalHotkeyEnabled = "globalHotkeyEnabled"
+        static let hardwareSensorsEnabled = "hardwareSensorsEnabled"
+        static let dockerEnabled = "dockerEnabled"
+        static let customLabels = "customLabels"
+        static let liveInterval = "liveInterval"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -34,6 +53,23 @@ final class SettingsModel {
     var globalHotkeyEnabled: Bool {
         didSet { defaults.set(globalHotkeyEnabled, forKey: Key.globalHotkeyEnabled) }
     }
+    /// Opt-in, off by default: temperatures, fans and system power from the SMC, a private macOS
+    /// interface (docs/v2/ADR-0001).
+    var hardwareSensorsEnabled: Bool {
+        didSet { defaults.set(hardwareSensorsEnabled, forKey: Key.hardwareSensorsEnabled) }
+    }
+    /// Opt-in, off by default: read-only Docker Engine API on the local socket (docs/v2/ADR-0002).
+    var dockerEnabled: Bool {
+        didSet { defaults.set(dockerEnabled, forKey: Key.dockerEnabled) }
+    }
+    /// `token = Label` lines; see `WorkloadRule.parse`.
+    var customLabels: String {
+        didSet { defaults.set(customLabels, forKey: Key.customLabels) }
+    }
+    /// Live refresh interval: 2, 5 or 10 s.
+    var liveInterval: TimeInterval {
+        didSet { defaults.set(liveInterval, forKey: Key.liveInterval) }
+    }
     /// Set by `GlobalHotkey` when ⌃⌥H couldn't be registered, usually because another app holds it.
     var globalHotkeyConflict = false
     /// True when the user has turned HeatLens notifications off in System Settings.
@@ -51,11 +87,24 @@ final class SettingsModel {
         excludedProjects = defaults.string(forKey: Key.excludedProjects) ?? ""
         thermalAlertsEnabled = defaults.bool(forKey: Key.thermalAlertsEnabled)
         globalHotkeyEnabled = defaults.bool(forKey: Key.globalHotkeyEnabled)
+        hardwareSensorsEnabled = defaults.bool(forKey: Key.hardwareSensorsEnabled)
+        dockerEnabled = defaults.bool(forKey: Key.dockerEnabled)
+        customLabels = defaults.string(forKey: Key.customLabels) ?? ""
+        let storedInterval = defaults.double(forKey: Key.liveInterval)
+        liveInterval = LiveConfiguration.intervals.contains(storedInterval) ? storedInterval : 5
         refreshLaunchAtLoginStatus()
     }
 
     var excludedProcessNames: [String] { lines(in: excludedProcesses) }
     var excludedProjectPrefixes: [String] { lines(in: excludedProjects) }
+    var workloadRules: [WorkloadRule] { WorkloadRule.parse(customLabels).rules }
+    var ignoredLabelLines: [String] { WorkloadRule.parse(customLabels).ignored }
+
+    /// What a scan or live session reads besides processes, from the switches above.
+    var collectionOptions: CollectionOptions {
+        CollectionOptions(hardwareSensors: hardwareSensorsEnabled, docker: dockerEnabled, userRules: workloadRules)
+    }
+
     var exclusions: ExclusionFilter {
         ExclusionFilter(processNames: excludedProcessNames, projectPrefixes: excludedProjectPrefixes)
     }

@@ -14,7 +14,8 @@ points at `handoffs/briefs/`; otherwise read `CLAUDE.md` instead.
 The user talks to Jarvis, almost never to you. Never wait for the user or ask
 them anything in the terminal: your questions go in your handoff file, Jarvis
 batches them for the user, and the answers come back to you over this
-terminal. The app lives at the repo root; the product spec is `docs/PRD.md`.
+terminal. The app lives at the repo root; the product spec is `docs/PRD.md` (v1, shipped);
+v2 work follows `docs/PRD-v2.md` and `docs/v2/PLAN.md`.
 
 ## Worker rules
 

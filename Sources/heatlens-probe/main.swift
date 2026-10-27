@@ -6,12 +6,20 @@ import HeatLensCore
 // data-quality notices and the top processes by CPU. Prints real paths (home shown as ~) and
 // process names from this Mac: never paste its output into the repo.
 // Flags: --duration <1…15> (default 5), --no-fixtures, --top <n> (default 15),
-// --report (print the redacted text report the app copies, from the same ScanPipeline, and exit).
+// --report (print the redacted text report the app copies, from the same ScanPipeline, and exit),
+// --sensors [--samples <n>] (print hardware sensor readings once a second, n times, default 3, and exit),
+// --docker (read the local Docker Engine twice, `--duration` apart, print containers, and exit),
+// --live <seconds> [--interval <2…10>] (run a live session with sensors and Docker, print each tick's cost, and exit).
 
 var duration: Double = 5
 var useFixtures = true
 var topN = 15
 var reportMode = false
+var sensorsMode = false
+var sensorSamples = 3
+var dockerMode = false
+var liveSeconds: Double?
+var liveInterval: Double = 5
 do {
     var it = CommandLine.arguments.dropFirst().makeIterator()
     while let a = it.next() {
@@ -20,9 +28,27 @@ do {
         case "--no-fixtures": useFixtures = false
         case "--top": topN = Int(it.next() ?? "") ?? topN
         case "--report": reportMode = true
+        case "--sensors": sensorsMode = true
+        case "--docker": dockerMode = true
+        case "--live": liveSeconds = Double(it.next() ?? "") ?? 60
+        case "--interval": liveInterval = Double(it.next() ?? "") ?? liveInterval
+        case "--samples": sensorSamples = max(1, Int(it.next() ?? "") ?? sensorSamples)
         default: print("unknown flag \(a)"); exit(2)
         }
     }
+}
+
+if sensorsMode {
+    printSensors(samples: sensorSamples)
+    exit(0)
+}
+if let liveSeconds {
+    await runLive(seconds: liveSeconds, interval: liveInterval)
+    exit(0)
+}
+if dockerMode {
+    printDocker(interval: min(max(duration, 1), 15))
+    exit(0)
 }
 
 let fixtures = Fixtures()
