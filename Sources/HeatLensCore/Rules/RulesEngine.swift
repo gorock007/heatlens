@@ -130,6 +130,7 @@ public struct RulesEngine: Sendable {
         appendMemoryFinding(snapshot: snapshot, to: &candidates)
         appendUIAndKernelFindings(snapshot: snapshot, to: &candidates)
         appendThermalFinding(snapshot: snapshot, to: &candidates)
+        appendAwakeFindings(snapshot: snapshot, groups: groups, processes: processes, evaluatedAt: evaluatedAt, to: &candidates)
 
         return candidates.sorted {
             if $0.impact != $1.impact { return $0.impact > $1.impact }
@@ -298,6 +299,107 @@ private extension RulesEngine {
             limitations: ["Thermal state is an OS signal, not a temperature reading or proof that one process caused it."],
             impact: snapshot.system.busyCores * 100
         ))
+    }
+
+    /// Ranks below every other finding (heat first, PRD §7): their impact is never negative.
+    static let awakeImpact = -1.0
+    static let agentNames: Set<String> = ["claude", "claude.exe", "codex", "opencode", "gemini", "aider", "cursor-agent"]
+    static let devToolNames: Set<String> = ["node", "npm", "npx", "pnpm", "yarn", "bun", "deno", "python", "python3",
+                                            "make", "cargo", "go", "swift", "xcodebuild", "gradle", "java", "ruby"]
+
+    /// One info finding per group holding a sleep-blocking power assertion. Keeping the Mac awake
+    /// is usually deliberate, so the severity stays `info` whoever holds it.
+    func appendAwakeFindings(snapshot: ScanSnapshot, groups: [ProcessGroup], processes: [ProcessIdentity: ProcessSample],
+                             evaluatedAt: Date, to candidates: inout [RankedFinding]) {
+        guard !snapshot.powerAssertions.isEmpty else { return }
+        let byPID = Dictionary(snapshot.processes.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        for group in groups {
+            let holders = group.members.filter { !snapshot.assertions(for: $0).isEmpty }
+            let held = holders.flatMap { holder in snapshot.assertions(for: holder).map { (holder: holder, assertion: $0) } }
+            let effects = SleepEffect.strongestFirst.filter { effect in held.contains { $0.assertion.effect == effect } }
+            guard let first = holders.first, !effects.isEmpty else { continue }
+
+            let longest = held.compactMap { $0.assertion.heldSeconds(at: evaluatedAt) }.max()
+            let doing = effects.map(\.gerund).joined(separator: " and ")
+            var explanation: String
+            if holders.count == 1 {
+                let who = "\(processes[first]?.name ?? "PID \(first.pid)") (PID \(first.pid))"
+                explanation = longest.map { "\(who) has been \(doing) for \(PowerAssertion.durationText($0))." }
+                    ?? "\(who) is \(doing)."
+            } else {
+                explanation = "\(holders.count) processes in this group are \(doing)"
+                    + (longest.map { ", the longest for \(PowerAssertion.durationText($0))." } ?? ".")
+            }
+            for note in caffeinateNotes(holders.compactMap { processes[$0] }, byPID: byPID) {
+                explanation += " " + note
+            }
+
+            var evidence: [Evidence] = []
+            for (holder, assertion) in held {
+                evidence.append(Evidence(label: assertion.type, value: assertion.name.isEmpty ? "(no name)" : assertion.name,
+                                         source: PowerAssertion.evidenceSource))
+                if let creator = assertion.createdByPID {
+                    let name = byPID[creator]?.name ?? "PID \(creator)"
+                    evidence.append(Evidence(label: "Created for PID \(holder.pid) by", value: "\(name) (PID \(creator))",
+                                             source: "AssertionOnBehalfOfPID"))
+                }
+            }
+            if let longest {
+                evidence.append(Evidence(label: "Held for", value: PowerAssertion.durationText(longest), source: "AssertStartWhen"))
+            }
+
+            var actions: [SuggestedAction] = [.inspect(first)]
+            if let project = group.project { actions.append(.openProject(path: project.directory)) }
+            candidates.append(RankedFinding(
+                finding: DiagnosticFinding(
+                    id: stableUUID("awake-\(group.root.pid)-\(group.root.startTimeMicros)"),
+                    title: "Keeping your Mac awake: \(group.label)",
+                    severity: .info,
+                    confidence: .high,
+                    explanation: explanation,
+                    evidence: evidence,
+                    limitations: ["Apps keep the Mac awake on purpose while playing media, downloading or running a task; this is not a fault."],
+                    affectedProcesses: holders,
+                    recommendedActions: actions,
+                    kind: .preventingSleep
+                ),
+                impact: Self.awakeImpact
+            ))
+        }
+    }
+
+    /// Says which `caffeinate` holders were left behind (their parent exited, PPID 1) and which
+    /// an AI agent or dev tool started. "It" stands for a lone holder the sentence before named.
+    func caffeinateNotes(_ holders: [ProcessSample], byPID: [Int32: ProcessSample]) -> [String] {
+        let caffeinates = holders.filter { $0.name == "caffeinate" }
+        func subject(_ process: ProcessSample) -> String { holders.count == 1 ? "It" : "caffeinate (PID \(process.pid))" }
+        var notes: [String] = []
+        let leftovers = caffeinates.filter { $0.parentPID == 1 }
+        if leftovers.count == 1 {
+            notes.append("\(subject(leftovers[0])) was left running after the process that started it exited (PPID 1).")
+        } else if leftovers.count > 1 {
+            let pids = leftovers.map { "\($0.pid)" }
+            notes.append("caffeinate PIDs \(pids.dropLast().joined(separator: ", ")) and \(pids.last!) were left running "
+                         + "after the processes that started them exited (PPID 1).")
+        }
+        for process in caffeinates where process.parentPID != 1 {
+            guard let (starter, role) = caffeinateStarter(process, byPID: byPID) else { continue }
+            notes.append("\(subject(process)) was started by \(starter.name) (PID \(starter.pid)), \(role).")
+        }
+        return notes
+    }
+
+    /// The nearest ancestor that is an AI agent or a dev tool, with how to describe it.
+    func caffeinateStarter(_ process: ProcessSample, byPID: [Int32: ProcessSample]) -> (ProcessSample, String)? {
+        var nextPID = process.parentPID
+        var seen = Set<Int32>()
+        while nextPID > 1, seen.insert(nextPID).inserted, seen.count <= 12, let parent = byPID[nextPID] {
+            let names = [parent.name, URL(fileURLWithPath: parent.executablePath ?? parent.name).lastPathComponent].map { $0.lowercased() }
+            if names.contains(where: Self.agentNames.contains) { return (parent, "an AI agent") }
+            if names.contains(where: Self.devToolNames.contains) { return (parent, "a dev tool") }
+            nextPID = parent.parentPID
+        }
+        return nil
     }
 
     func systemFinding(

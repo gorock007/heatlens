@@ -12,7 +12,7 @@ public enum ScanError: Error, Equatable {
 /// A scan reads host counters, every process (libproc), and, when libproc refused some
 /// processes, one `ps` run; waits out the interval reporting progress about once a second;
 /// then repeats those reads plus memory/thermal state, and lists the TCP ports the processes
-/// listen on (once, at the end). `ScanAssembly` turns the two ends into per-process deltas.
+/// listen on and the power assertions they hold (once each, at the end). `ScanAssembly` turns the two ends into per-process deltas.
 public actor ScanCoordinator {
     public static let durationRange: ClosedRange<TimeInterval> = 1...15
 
@@ -20,22 +20,26 @@ public actor ScanCoordinator {
     private let systemSampler: any SystemSampling
     private let fallbackSampler: PSTimeSampler
     private let portSampler: any PortSampling
+    private let assertionSampler: any PowerAssertionSampling
     private var isScanning = false
 
     public init(processSampler: some ProcessSampling = LibprocProcessSampler(),
                 systemSampler: some SystemSampling = HostSystemSampler(),
-                portSampler: some PortSampling = LibprocPortSampler()) {
+                portSampler: some PortSampling = LibprocPortSampler(),
+                assertionSampler: some PowerAssertionSampling = IOKitPowerAssertionSampler()) {
         self.init(processSampler: processSampler, systemSampler: systemSampler, fallbackSampler: PSTimeSampler(),
-                  portSampler: portSampler)
+                  portSampler: portSampler, assertionSampler: assertionSampler)
     }
 
     /// Tests inject a `PSTimeSampler` that runs a slow executable or reports its child PIDs.
     init(processSampler: any ProcessSampling, systemSampler: any SystemSampling, fallbackSampler: PSTimeSampler,
-         portSampler: any PortSampling = LibprocPortSampler()) {
+         portSampler: any PortSampling = LibprocPortSampler(),
+         assertionSampler: any PowerAssertionSampling = IOKitPowerAssertionSampler()) {
         self.processSampler = processSampler
         self.systemSampler = systemSampler
         self.fallbackSampler = fallbackSampler
         self.portSampler = portSampler
+        self.assertionSampler = assertionSampler
     }
 
     /// duration clamped to 1...15 s (PRD offers 5/10/15). progress is called about once a second with elapsed seconds.
@@ -72,10 +76,12 @@ public actor ScanCoordinator {
         let state = try await systemSampler.state()
         try Task.checkCancellation()
         let ports = portSampler.listeningPorts(of: after.processes)
+        let assertions = assertionSampler.powerAssertions(of: after.processes)
 
         return ScanAssembly.snapshot(startedAt: startedAt, before: before, after: after,
                                      psBefore: psBefore, psAfter: psAfter, psFailure: psFailure,
-                                     hostBefore: hostBefore, hostAfter: hostAfter, state: state, ports: ports)
+                                     hostBefore: hostBefore, hostAfter: hostAfter, state: state, ports: ports,
+                                     assertions: assertions)
     }
 
     /// The TCP ports processes listen on right now, from one process reading: no interval, no
@@ -84,6 +90,15 @@ public actor ScanCoordinator {
         try Task.checkCancellation()
         let reading = try processSampler.snapshot()
         return ScanAssembly.portsSnapshot(reading: reading, ports: portSampler.listeningPorts(of: reading.processes))
+    }
+
+    /// The sleep-blocking power assertions processes hold right now, from one process reading:
+    /// no interval, no CPU or host sampling, no `ps`. Takes milliseconds, and may run while a scan waits.
+    public func awake() throws -> ScanSnapshot {
+        try Task.checkCancellation()
+        let reading = try processSampler.snapshot()
+        return ScanAssembly.awakeSnapshot(reading: reading,
+                                          assertions: assertionSampler.powerAssertions(of: reading.processes))
     }
 
     static func clampedDuration(_ duration: TimeInterval) throws -> TimeInterval {

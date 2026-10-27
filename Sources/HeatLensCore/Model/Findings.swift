@@ -37,6 +37,8 @@ public enum SuggestedAction: Hashable, Codable, Sendable {
 /// Which rule produced a finding, so the UI doesn't have to infer it from titles or evidence.
 public enum FindingKind: String, Hashable, Codable, Sendable {
     case highCPU, memoryPressure, swapInUse, staleDevServer, detachedWorker, uiHeavy, kernelTask, thermal
+    /// A group holds a power assertion that keeps the Mac (or its display) awake.
+    case preventingSleep
 }
 
 /// PRD §4.3 output type.

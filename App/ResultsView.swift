@@ -10,6 +10,8 @@ struct ReportContext {
     let hiddenFindingIDs: Set<UUID>
     /// Every listening port with its process and group, sorted by port.
     let portListings: [PortListing]
+    /// Every sleep-blocking power assertion with its process and group, oldest first.
+    let assertionListings: [PowerAssertionListing]
 
     init(report: ScanReport, hiddenFindingIDs: Set<UUID> = []) {
         self.report = report
@@ -17,6 +19,7 @@ struct ReportContext {
         processes = Dictionary(report.snapshot.processes.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
         observedAt = report.snapshot.startedAt.addingTimeInterval(report.snapshot.interval)
         portListings = PortListing.listings(report.snapshot, groups: report.groups)
+        assertionListings = PowerAssertionListing.listings(report.snapshot, groups: report.groups)
     }
 
     func uptime(_ identity: ProcessIdentity) -> String {
@@ -142,6 +145,12 @@ struct ResultsView: View {
                 if !context.portListings.isEmpty {
                     ResultSection(title: "Ports") {
                         PortList(listings: context.portListings) { selectedProcess = $0 }
+                    }
+                }
+
+                if !context.assertionListings.isEmpty {
+                    ResultSection(title: "Keeping your Mac awake") {
+                        AwakeList(listings: context.assertionListings, observedAt: context.observedAt) { selectedProcess = $0 }
                     }
                 }
 
@@ -448,6 +457,71 @@ private struct PortList: View {
             if let project = group.project { parts.append((project.directory as NSString).lastPathComponent) }
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+private struct AwakeList: View {
+    let listings: [PowerAssertionListing]
+    let observedAt: Date
+    let onInspect: (ProcessIdentity) -> Void
+
+    static let collapsedCount = 6
+    @State private var expanded = false
+
+    private var shown: [PowerAssertionListing] { expanded ? listings : Array(listings.prefix(Self.collapsedCount)) }
+
+    var body: some View {
+        ForEach(shown) { listing in
+            // The whole row inspects, like the Ports rows; the trailing word says so.
+            Button { onInspect(listing.identity) } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: listing.assertion.effect == .keepsDisplayOn ? "display" : "cup.and.saucer")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(verbatim: "\(listing.processName) · PID \(listing.identity.pid)")
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                        Text(verbatim: detail(listing))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text("Inspect")
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(listing.assertion.name.isEmpty ? "Inspect process" : "\(listing.assertion.name) — inspect process")
+        }
+        if listings.count > Self.collapsedCount {
+            Button(expanded ? "Show fewer" : "Show all \(listings.count)") { expanded.toggle() }
+                .controlSize(.small)
+        }
+    }
+
+    private func detail(_ listing: PowerAssertionListing) -> String {
+        var parts = [listing.assertion.effect?.label ?? listing.assertion.type]
+        if let held = listing.assertion.heldSeconds(at: observedAt) { parts.append(PowerAssertion.durationText(held)) }
+        if let group = listing.group {
+            parts.append(group.label)
+            if let project = group.project { parts.append((project.directory as NSString).lastPathComponent) }
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+extension PowerAssertion {
+    /// "Prevents idle sleep for 3 h 12 min (“caffeinate command-line tool”)", for the detail view.
+    func detailText(at now: Date) -> String {
+        var text = effect?.label ?? type
+        if let held = heldSeconds(at: now) { text += " for \(PowerAssertion.durationText(held))" }
+        if !name.isEmpty { text += " (“\(name)”)" }
+        return text
     }
 }
 

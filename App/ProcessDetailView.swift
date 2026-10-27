@@ -53,6 +53,10 @@ struct ProcessDetailView: View {
             if !ports.isEmpty {
                 row("Listening on", ports.map { ":\($0.port) (\($0.scopeLabel))" }.joined(separator: ", "))
             }
+            let assertions = context.report.snapshot.assertions(for: identity)
+            if !assertions.isEmpty {
+                row("Preventing sleep", assertions.map { $0.detailText(at: context.observedAt) }.joined(separator: "\n"))
+            }
             if process?.detailAccess == .processExited {
                 row("Status", Format.exited)
             } else {

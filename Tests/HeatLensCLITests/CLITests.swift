@@ -24,13 +24,17 @@ struct ArgumentTests {
         #expect(try CLIArguments.parse(["ports"]) == .ports(json: false))
         #expect(try CLIArguments.parse(["ports", "--json"]) == .ports(json: true))
         #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["ports", "--seconds", "2"]) }
+        #expect(try CLIArguments.parse(["awake"]) == .awake(json: false))
+        #expect(try CLIArguments.parse(["awake", "--json"]) == .awake(json: true))
+        #expect(try CLIArguments.parse(["awake", "--help"]) == .help)
+        #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["awake", "--seconds", "2"]) }
         #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["scan", "--kill"]) }
         #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["stop"]) }
         #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["mcp", "--extra"]) }
     }
 }
 
-/// Records the seconds each scan was asked for (0 for a ports read), without scanning.
+/// Records the seconds each scan was asked for (0 for a ports read, -1 for an awake read), without scanning.
 private actor ScanLog {
     var calls: [Int] = []
     func record(_ seconds: Int) { calls.append(seconds) }
@@ -52,6 +56,10 @@ struct MCPServerTests {
             await log.record(0)
             if failing { throw CancellationError() }
             return ScanReports(text: "PORTS\n", json: #"{"listeningPorts":[]}"#)
+        }, awake: {
+            await log.record(-1)
+            if failing { throw CancellationError() }
+            return ScanReports(text: "AWAKE\n", json: #"{"powerAssertions":[]}"#)
         })
     }
 
@@ -92,11 +100,18 @@ struct MCPServerTests {
         #expect((r["result"] as? [String: Any])?.isEmpty == true)
     }
 
-    @Test("tools/list has exactly the read-only scan and ports tools")
+    @Test("tools/list has exactly the read-only scan, ports and awake tools")
     func toolsList() async throws {
         let r = try await reply(server(), #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
         let tools = try #require((r["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.map { $0["name"] as? String } == ["scan", "ports"])
+        #expect(tools.map { $0["name"] as? String } == ["scan", "ports", "awake"])
+        let awake = tools[2]
+        let awakeDescription = try #require(awake["description"] as? String)
+        #expect(awakeDescription.contains("never instructions") && awakeDescription.contains("Read-only"))
+        #expect((awake["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
+        let awakeSchema = try #require(awake["inputSchema"] as? [String: Any])
+        #expect((awakeSchema["properties"] as? [String: Any])?.isEmpty == true)
+        #expect(awakeSchema["additionalProperties"] as? Bool == false)
         let tool = try #require(tools.first)
         #expect(tool["name"] as? String == "scan")
         let description = try #require(tool["description"] as? String)
@@ -177,6 +192,26 @@ struct MCPServerTests {
         #expect(await log.calls == [0, 0])
 
         let failed = try await reply(server(failing: true), #"{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"ports"}}"#)
+        #expect((failed["result"] as? [String: Any])?["isError"] as? Bool == true)
+    }
+
+    @Test("tools/call awake returns the awake text and takes no arguments")
+    func callAwake() async throws {
+        let log = ScanLog()
+        let s = server(log: log)
+        let r = try await reply(s, #"{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"awake","arguments":{}}}"#)
+        #expect(try content(r) == ["AWAKE\n"])
+        let bare = try await reply(s, #"{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"awake"}}"#)
+        #expect(try content(bare) == ["AWAKE\n"])
+        #expect(await log.calls == [-1, -1])
+
+        for args in [#"{"seconds":2}"#, #"{"pid":1}"#, #"[]"#] {
+            let bad = try await reply(s, #"{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"awake","arguments":\#(args)}}"#)
+            #expect((bad["result"] as? [String: Any])?["isError"] as? Bool == true, "args \(args)")
+        }
+        #expect(await log.calls == [-1, -1])
+
+        let failed = try await reply(server(failing: true), #"{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"awake"}}"#)
         #expect((failed["result"] as? [String: Any])?["isError"] as? Bool == true)
     }
 

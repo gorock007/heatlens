@@ -93,6 +93,26 @@ do {
     print("port sampling timing failed: \(error)")
 }
 
+let observedAt = snapshot.startedAt.addingTimeInterval(snapshot.interval)
+print("\nkeeping the Mac awake (\(snapshot.powerAssertions.reduce(0) { $0 + $1.assertions.count })):")
+for entry in snapshot.powerAssertions {
+    for assertion in entry.assertions {
+        // Names can be personal (track titles, URLs), so the probe prints the type only.
+        let held = assertion.heldSeconds(at: observedAt).map { " · " + PowerAssertion.durationText($0) } ?? ""
+        let creator = assertion.createdByPID.map { " · created by PID \($0)" } ?? ""
+        print("  \(assertion.effect?.label ?? assertion.type) (\(assertion.type)) · \(byIdentity[entry.identity]?.name ?? "?") · PID \(entry.identity.pid)\(held)\(creator)")
+    }
+}
+do {
+    // Like the port read: time the assertion read once more on its own.
+    let readings = try LibprocProcessSampler().snapshot().processes
+    let timing = IOKitPowerAssertionSampler().powerAssertions(of: readings)
+    print(String(format: "power assertion sampling: %.2f ms for %d processes%@", Double(timing.elapsedNanoseconds) / 1e6,
+                 readings.count, timing.failure.map { " (\($0))" } ?? ""))
+} catch {
+    print("power assertion sampling timing failed: \(error)")
+}
+
 print("\ntop \(topN) by CPU (100% = one core):")
 print(pad("pid", 7) + pad("cpu%", 8, right: true) + pad("src", 8, right: true) + pad("rss", 10, right: true) + pad("footprint", 11, right: true) + pad("thr", 5, right: true) + "  " + pad("owner", 6) + pad("age", 8) + "name · path")
 let ownerLabel: [ProcessOwner: String] = [.currentUser: "own", .root: "root", .otherUser: "other", .unknown: "?"]

@@ -42,9 +42,17 @@ case let .ports(json):
     } catch {
         fail("reading ports failed: \(error)", code: 1)
     }
+case let .awake(json):
+    do {
+        let reports = try await LiveScan.awake()
+        print(json ? reports.json : reports.text, terminator: json ? "\n" : "")
+    } catch {
+        fail("reading power assertions failed: \(error)", code: 1)
+    }
 case .mcp:
     let server = MCPServer(scan: { seconds in try await LiveScan.run(seconds: seconds) },
-                           ports: { try await LiveScan.ports() })
+                           ports: { try await LiveScan.ports() },
+                           awake: { try await LiveScan.awake() })
     do {
         for try await line in FileHandle.standardInput.bytes.lines {
             guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }

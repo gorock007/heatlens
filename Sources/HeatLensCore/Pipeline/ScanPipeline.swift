@@ -30,6 +30,22 @@ public struct PortsSnapshot: Sendable {
     public var listings: [PortListing] { PortListing.listings(snapshot, groups: groups) }
 }
 
+/// The sleep-blocking power assertions at one instant, grouped like a scan's, without a CPU sample.
+public struct AwakeSnapshot: Sendable {
+    /// One process reading: every `cpu` is nil, `interval` is 0 and `system` is a placeholder.
+    /// `powerAssertions` and `notices` (a failed read) are real.
+    public let snapshot: ScanSnapshot
+    public let groups: [ProcessGroup]
+
+    public init(snapshot: ScanSnapshot, groups: [ProcessGroup]) {
+        self.snapshot = snapshot
+        self.groups = groups
+    }
+
+    /// One row per assertion, oldest first.
+    public var listings: [PowerAssertionListing] { PowerAssertionListing.listings(snapshot, groups: groups) }
+}
+
 /// The one composition point shared by the app and the probe:
 /// `ScanCoordinator.scan` → `ProvenanceResolver.resolve` → `RulesEngine.evaluate`.
 public struct ScanPipeline: Sendable {
@@ -56,5 +72,12 @@ public struct ScanPipeline: Sendable {
     public func ports() async throws -> PortsSnapshot {
         let snapshot = try await coordinator.ports()
         return PortsSnapshot(snapshot: snapshot, groups: ProvenanceResolver.resolve(snapshot))
+    }
+
+    /// `ScanCoordinator.awake` → `ProvenanceResolver.resolve`, for `heatlens awake`. No rules run,
+    /// like `ports()`.
+    public func awake() async throws -> AwakeSnapshot {
+        let snapshot = try await coordinator.awake()
+        return AwakeSnapshot(snapshot: snapshot, groups: ProvenanceResolver.resolve(snapshot))
     }
 }

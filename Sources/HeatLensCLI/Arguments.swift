@@ -9,6 +9,7 @@ public enum CLICommand: Equatable, Sendable {
     case version
     case scan(seconds: Int, json: Bool)
     case ports(json: Bool)
+    case awake(json: Bool)
     case mcp
 }
 
@@ -28,8 +29,11 @@ public enum CLIArguments {
                                                  redacted text report, or the redacted JSON with --json.
           heatlens ports [--json]                List the TCP ports processes listen on right now, with
                                                  their app or project (no CPU sample; redacted).
-          heatlens mcp                           Run an MCP server over stdio with two read-only tools,
-                                                 scan and ports.
+          heatlens awake [--json]                List what is keeping this Mac awake right now (power
+                                                 assertions), with their app or project (no CPU sample;
+                                                 redacted).
+          heatlens mcp                           Run an MCP server over stdio with three read-only tools,
+                                                 scan, ports and awake.
           heatlens --help                        Show this help.
           heatlens --version                     Show the version.
 
@@ -64,16 +68,16 @@ public enum CLIArguments {
                 }
             }
             return .scan(seconds: seconds, json: json)
-        case "ports":
+        case "ports", "awake":
             var json = false
             while let a = it.next() {
                 switch a {
                 case "--json": json = true
                 case "--help", "-h": return .help
-                default: throw CLIUsageError(description: "unknown flag for ports: \(a)")
+                default: throw CLIUsageError(description: "unknown flag for \(first): \(a)")
                 }
             }
-            return .ports(json: json)
+            return first == "ports" ? .ports(json: json) : .awake(json: json)
         default:
             throw CLIUsageError(description: "unknown command: \(first)")
         }

@@ -90,9 +90,13 @@ public struct ScanSnapshot: Identifiable, Hashable, Codable, Sendable {
     /// TCP ports in LISTEN state, read once at the end of the scan; only processes with at least
     /// one port appear. Empty for snapshots (and JSON) from before ports were sampled.
     public let listeningPorts: [ProcessListeningPorts]
+    /// Sleep-blocking power assertions, read once at the end of the scan; only processes holding
+    /// at least one appear. Empty for snapshots (and JSON) from before assertions were sampled.
+    public let powerAssertions: [ProcessPowerAssertions]
 
     public init(id: UUID = UUID(), startedAt: Date, interval: TimeInterval, system: SystemSample,
-                processes: [ProcessSample], notices: [String], listeningPorts: [ProcessListeningPorts] = []) {
+                processes: [ProcessSample], notices: [String], listeningPorts: [ProcessListeningPorts] = [],
+                powerAssertions: [ProcessPowerAssertions] = []) {
         self.id = id
         self.startedAt = startedAt
         self.interval = interval
@@ -100,10 +104,11 @@ public struct ScanSnapshot: Identifiable, Hashable, Codable, Sendable {
         self.processes = processes
         self.notices = notices
         self.listeningPorts = listeningPorts
+        self.powerAssertions = powerAssertions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, startedAt, interval, system, processes, notices, listeningPorts
+        case id, startedAt, interval, system, processes, notices, listeningPorts, powerAssertions
     }
 
     public init(from decoder: Decoder) throws {
@@ -111,6 +116,7 @@ public struct ScanSnapshot: Identifiable, Hashable, Codable, Sendable {
         self.init(id: try c.decode(UUID.self, forKey: .id), startedAt: try c.decode(Date.self, forKey: .startedAt),
                   interval: try c.decode(TimeInterval.self, forKey: .interval), system: try c.decode(SystemSample.self, forKey: .system),
                   processes: try c.decode([ProcessSample].self, forKey: .processes), notices: try c.decode([String].self, forKey: .notices),
-                  listeningPorts: try c.decodeIfPresent([ProcessListeningPorts].self, forKey: .listeningPorts) ?? [])
+                  listeningPorts: try c.decodeIfPresent([ProcessListeningPorts].self, forKey: .listeningPorts) ?? [],
+                  powerAssertions: try c.decodeIfPresent([ProcessPowerAssertions].self, forKey: .powerAssertions) ?? [])
     }
 }

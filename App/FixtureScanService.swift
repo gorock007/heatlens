@@ -18,7 +18,7 @@ struct FixtureScanService: ScanService {
         let fixture = Fixture(now: startedAt)
         let snapshot = ScanSnapshot(startedAt: startedAt, interval: interval, system: fixture.system,
                                     processes: fixture.processes, notices: fixture.notices,
-                                    listeningPorts: fixture.listeningPorts)
+                                    listeningPorts: fixture.listeningPorts, powerAssertions: fixture.powerAssertions)
         return ScanReport(ScanResult(snapshot: snapshot, groups: fixture.groups, findings: fixture.findings))
     }
 }
@@ -79,6 +79,10 @@ private struct Fixture {
         process(23003, parent: 23002, age: 38 * Self.hour, name: "next-server",
                 argv: ["next-server (v15.0.0)"], cwd: "~/Projects/portfolio-demo", cpuPercent: 1.1, megabytes: 610)
     }
+    var caffeinate: ProcessSample {
+        process(4120, parent: 4101, age: 3 * Self.hour, name: "caffeinate",
+                argv: ["/usr/bin/caffeinate", "-i"], cwd: "~/Projects/jarvis-demo", cpuPercent: 0, megabytes: 2)
+    }
     var browser: ProcessSample {
         process(801, parent: 1, age: 6 * Self.hour, name: "Safari",
                 argv: ["/Applications/Safari.app/Contents/MacOS/Safari"], cwd: "/", cpuPercent: 12.5, megabytes: 1240)
@@ -89,7 +93,7 @@ private struct Fixture {
     }
 
     var processes: [ProcessSample] {
-        [browser, opencode, opencodeWorker, nextServer, nextDev, npm, worker, windowServer]
+        [browser, opencode, opencodeWorker, caffeinate, nextServer, nextDev, npm, worker, windowServer]
     }
 
     // MARK: Ports
@@ -102,6 +106,17 @@ private struct Fixture {
                                   ports: [ListeningPort(port: 3000, family: .dual, scope: .allInterfaces)]),
             ProcessListeningPorts(identity: worker.identity,
                                   ports: [ListeningPort(port: 8787, family: .ipv4, scope: .loopback)]),
+        ]
+    }
+
+    // MARK: Power assertions
+
+    var powerAssertions: [ProcessPowerAssertions] {
+        [
+            ProcessPowerAssertions(identity: caffeinate.identity, assertions: [
+                PowerAssertion(type: "PreventUserIdleSystemSleep", name: "caffeinate command-line tool",
+                               startedAt: now.addingTimeInterval(-3 * Self.hour)),
+            ]),
         ]
     }
 
@@ -131,7 +146,7 @@ private struct Fixture {
 
     var groups: [ProcessGroup] {
         [
-            ProcessGroup(root: opencode.identity, members: [opencode.identity, opencodeWorker.identity],
+            ProcessGroup(root: opencode.identity, members: [opencode.identity, opencodeWorker.identity, caffeinate.identity],
                          kind: "opencode", label: "OpenCode agent",
                          project: ProjectAttribution(directory: "~/Projects/jarvis-demo", basis: "cwd", confidence: .high),
                          confidence: .high,
@@ -224,6 +239,20 @@ private struct Fixture {
                 recommendedActions: [.inspect(npm.identity), .openProject(path: "~/Projects/portfolio-demo"),
                                      .copyCommand(nextDev.identity), .requestStop(npm.identity)],
                 kind: .staleDevServer),
+            DiagnosticFinding(
+                title: "Keeping your Mac awake: OpenCode agent",
+                severity: .info, confidence: .high,
+                explanation: "caffeinate (PID 4120) has been preventing idle sleep for 3 h 0 min. "
+                    + "It was started by opencode (PID 4101), an AI agent.",
+                evidence: [
+                    Evidence(label: "PreventUserIdleSystemSleep", value: "caffeinate command-line tool",
+                             source: PowerAssertion.evidenceSource),
+                    Evidence(label: "Held for", value: "3 h 0 min", source: "AssertStartWhen"),
+                ],
+                limitations: ["Apps keep the Mac awake on purpose while playing media, downloading or running a task; this is not a fault."],
+                affectedProcesses: [caffeinate.identity],
+                recommendedActions: [.inspect(caffeinate.identity), .openProject(path: "~/Projects/jarvis-demo")],
+                kind: .preventingSleep),
         ]
     }
 }

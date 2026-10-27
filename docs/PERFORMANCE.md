@@ -61,6 +61,11 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
    capped. Measured with `.build/release/heatlens-probe --no-fixtures --duration 1`, which times
    the same read on its own (its `port sampling:` line).
 
+6. **Power assertions** (2026-10-27): one `IOPMCopyAssertionsByProcess` call plus filtering, at
+   the end of the scan, took 0.44–0.59 ms for about 700 processes in the release build (4 runs)
+   and 0.57–0.58 ms in the debug build (2 runs). Nothing is capped. Measured with
+   `.build/release/heatlens-probe --no-fixtures --duration 1` (its `power assertion sampling:` line).
+
 ## 3. Snapshot cost
 
 No test or probe output prints the cost of building a snapshot, rules and report on their own,

@@ -18,6 +18,9 @@ public typealias ScanRunner = @Sendable (_ seconds: Int) async throws -> ScanRep
 /// Reads the listening ports once and returns both redacted reports (text, JSON). Injected like `ScanRunner`.
 public typealias PortsRunner = @Sendable () async throws -> ScanReports
 
+/// Reads the power assertions once and returns both redacted reports (text, JSON). Injected like `ScanRunner`.
+public typealias AwakeRunner = @Sendable () async throws -> ScanReports
+
 public enum LiveScan {
     /// One `ScanPipeline` scan, rendered by `Redactor`.
     public static func run(seconds: Int, progress: @escaping @Sendable (TimeInterval) -> Void = { _ in }) async throws -> ScanReports {
@@ -32,6 +35,14 @@ public enum LiveScan {
         let ports = try await ScanPipeline().ports()
         let text = Redactor.portsTextReport(ports.snapshot, groups: ports.groups)
         let data = try Redactor.portsJSONReport(ports.snapshot, groups: ports.groups)
+        return ScanReports(text: text, json: String(decoding: data, as: UTF8.self))
+    }
+
+    /// One `ScanPipeline.awake()` read (no sampling interval), rendered by `Redactor`.
+    public static func awake() async throws -> ScanReports {
+        let awake = try await ScanPipeline().awake()
+        let text = Redactor.awakeTextReport(awake.snapshot, groups: awake.groups)
+        let data = try Redactor.awakeJSONReport(awake.snapshot, groups: awake.groups)
         return ScanReports(text: text, json: String(decoding: data, as: UTF8.self))
     }
 }

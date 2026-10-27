@@ -52,6 +52,7 @@ heatlens=/Applications/HeatLens.app/Contents/Helpers/heatlens
 "$heatlens" scan --seconds 10 --json > scan.json
 "$heatlens" ports                         # listening TCP ports with their app or project, no CPU sample
 "$heatlens" ports --json
+"$heatlens" awake                         # what is keeping the Mac awake (power assertions), no CPU sample
 ```
 
 To let Claude Code, Codex or another MCP client use HeatLens, open **Settings → Connect to an AI
@@ -63,12 +64,14 @@ claude mcp add heatlens -- '/Applications/HeatLens.app/Contents/Helpers/heatlens
 codex mcp add heatlens -- '/Applications/HeatLens.app/Contents/Helpers/heatlens' mcp
 ```
 
-The MCP server has two read-only tools:
+The MCP server has three read-only tools:
 
 - `scan` (`seconds` 1–15, default 5) returns the text report. Pass `includeJSON: true` to also
   get the full JSON report as a second, compact item. It is often hundreds of KB, so it's off by default.
 - `ports` (no arguments) returns the listening ports, like the report's "Listening ports"
   section, in well under a second.
+- `awake` (no arguments) returns what is keeping the Mac awake (power assertions such as
+  `caffeinate`, with their process and project), like the report's "Keeping the Mac awake" section.
 
 From a checkout, `swift build -c release` builds the same command at `.build/release/heatlens`.
 

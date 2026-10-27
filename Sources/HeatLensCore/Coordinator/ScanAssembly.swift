@@ -13,8 +13,8 @@ import Foundation
 ///   out for 2 s of a 5 s scan reads ~100 %, not 40 %).
 /// - Processes libproc refused get CPU and RSS from the two `ps` runs (`measurementSource = .ps`)
 ///   and keep `detailAccess = .permissionDenied`, since argv, cwd and footprint stay unreadable.
-/// - Listening ports come from one read at the end of the scan, so they belong to the second
-///   reading's identities; a process that exited before that read has none.
+/// - Listening ports and power assertions come from one read each at the end of the scan, so
+///   they belong to the second reading's identities; a process that exited before that read has none.
 enum ScanAssembly {
     /// Shortest lifetime a born-mid-scan percentage is divided by, so a process seen a few
     /// milliseconds after birth does not read as thousands of percent.
@@ -23,7 +23,7 @@ enum ScanAssembly {
     static func snapshot(startedAt: Date, before: ProcessCounters, after: ProcessCounters,
                          psBefore: PSTimeSampler.Reading?, psAfter: PSTimeSampler.Reading?, psFailure: String?,
                          hostBefore: HostCounters, hostAfter: HostCounters, state: HostState,
-                         ports: PortReading? = nil) -> ScanSnapshot {
+                         ports: PortReading? = nil, assertions: PowerAssertionReading? = nil) -> ScanSnapshot {
         let elapsed = after.monotonicNanoseconds > before.monotonicNanoseconds
             ? after.monotonicNanoseconds - before.monotonicNanoseconds : 0
         var psElapsed: UInt64 = 0
@@ -81,34 +81,58 @@ enum ScanAssembly {
         let system = systemSample(hostBefore: hostBefore, hostAfter: hostAfter, state: state)
         let notices = notices(samples: samples, exitedCount: exitedCount, psFailure: psFailure,
                               elapsed: elapsed, hostBefore: hostBefore, hostAfter: hostAfter, system: system, state: state)
-            + portNotices(ports)
+            + portNotices(ports) + assertionNotices(assertions)
         let known = Set(samples.filter { $0.detailAccess != .processExited }.map(\.identity))
         return ScanSnapshot(startedAt: startedAt, interval: TimeInterval(elapsed) / 1e9, system: system,
                             processes: samples, notices: notices,
-                            listeningPorts: ports?.ports.filter { known.contains($0.identity) } ?? [])
+                            listeningPorts: ports?.ports.filter { known.contains($0.identity) } ?? [],
+                            powerAssertions: assertions?.assertions.filter { known.contains($0.identity) } ?? [])
     }
 
     /// A ports-only snapshot from one process reading: no CPU figures (`interval` 0, every `cpu`
     /// nil) and a placeholder `system`, since nothing was sampled over time. Groups and ports are
     /// as good as a scan's; only the port notice is added.
     static func portsSnapshot(reading: ProcessCounters, ports: PortReading) -> ScanSnapshot {
-        let samples = reading.processes
+        let samples = instantSamples(reading)
+        let known = Set(samples.map(\.identity))
+        return ScanSnapshot(startedAt: reading.wallClock, interval: 0, system: placeholderSystem, processes: samples,
+                            notices: portNotices(ports),
+                            listeningPorts: ports.ports.filter { known.contains($0.identity) })
+    }
+
+    /// Like `portsSnapshot`, for `heatlens awake`: the power assertions instead of the ports.
+    static func awakeSnapshot(reading: ProcessCounters, assertions: PowerAssertionReading) -> ScanSnapshot {
+        let samples = instantSamples(reading)
+        let known = Set(samples.map(\.identity))
+        return ScanSnapshot(startedAt: reading.wallClock, interval: 0, system: placeholderSystem, processes: samples,
+                            notices: assertionNotices(assertions),
+                            powerAssertions: assertions.assertions.filter { known.contains($0.identity) })
+    }
+
+    /// One reading's processes with no CPU figures, sorted like a scan's.
+    private static func instantSamples(_ reading: ProcessCounters) -> [ProcessSample] {
+        reading.processes
             .map { sample($0, cpu: nil, over: 0, source: nil) }
             .sorted { ($0.identity.pid, $0.identity.startTimeMicros) < ($1.identity.pid, $1.identity.startTimeMicros) }
+    }
+
+    /// Stands in for the host sample a one-reading snapshot doesn't take.
+    private static var placeholderSystem: SystemSample {
         let memory = MemorySnapshot(totalBytes: 0, freeBytes: 0, activeBytes: 0, inactiveBytes: 0, wiredBytes: 0,
                                     compressedBytes: 0, swapUsedBytes: 0, swapTotalBytes: 0, swapOutsDelta: 0,
                                     pressure: .unknown, availablePercent: nil)
-        let system = SystemSample(coreCount: 0, hostBusyFraction: 0, perCoreBusyFraction: [], memory: memory,
-                                  thermalState: .unavailable, pmsetCPUSpeedLimit: nil, pmsetCPUSchedulerLimit: nil)
-        let known = Set(samples.map(\.identity))
-        return ScanSnapshot(startedAt: reading.wallClock, interval: 0, system: system, processes: samples,
-                            notices: portNotices(ports),
-                            listeningPorts: ports.ports.filter { known.contains($0.identity) })
+        return SystemSample(coreCount: 0, hostBusyFraction: 0, perCoreBusyFraction: [], memory: memory,
+                            thermalState: .unavailable, pmsetCPUSpeedLimit: nil, pmsetCPUSchedulerLimit: nil)
     }
 
     static func portNotices(_ ports: PortReading?) -> [String] {
         guard let ports, ports.refusedCount > 0 else { return [] }
         return ["Listening ports of \(ports.refusedCount) root/other-user processes are not visible."]
+    }
+
+    static func assertionNotices(_ assertions: PowerAssertionReading?) -> [String] {
+        guard let failure = assertions?.failure else { return [] }
+        return ["What's keeping the Mac awake is unavailable (\(failure))."]
     }
 
     private static func sample(_ r: ProcessReading, cpu: CPUTime?, over window: UInt64, residentBytes: UInt64? = nil,

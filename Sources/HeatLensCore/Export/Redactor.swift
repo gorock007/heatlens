@@ -8,6 +8,8 @@ public enum Redactor {
     public static let textFindingProcessLimit = 5
     /// Longer argv in the text report is cut to this many characters.
     public static let textArgvLimit = 300
+    /// Power assertion names in both reports are cut to this many characters.
+    public static let assertionNameLimit = 80
 
     public static func textReport(
         _ snapshot: ScanSnapshot,
@@ -59,6 +61,7 @@ public enum Redactor {
         }
 
         lines += portLines(report.listeningPorts)
+        lines += awakeLines(report.powerAssertions, observedAt: report.startedAt.addingTimeInterval(report.interval))
 
         lines.append("Processes (top \(processLimit) by CPU, plus any named in a finding):")
         if listed.isEmpty { lines.append("- none") }
@@ -103,6 +106,31 @@ public enum Redactor {
         try encoder.encode(makePortsReport(snapshot, groups: groups, homeDirectory: homeDirectory))
     }
 
+    /// `heatlens awake`: the "Keeping the Mac awake" section of `textReport` on its own, for an
+    /// `AwakeSnapshot` (one process reading, no CPU sample), with its notices.
+    public static func awakeTextReport(
+        _ snapshot: ScanSnapshot,
+        groups: [ProcessGroup],
+        homeDirectory: String = NSHomeDirectory()
+    ) -> String {
+        let report = makeAwakeReport(snapshot, groups: groups, homeDirectory: homeDirectory)
+        var lines = ["HeatLens: what's keeping the Mac awake, read \(ISO8601DateFormatter().string(from: report.readAt))"]
+        if !report.notices.isEmpty {
+            lines.append("Notices: \(report.notices.joined(separator: "; "))")
+        }
+        lines += awakeLines(report.powerAssertions, observedAt: report.readAt)
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// `readAt`, `notices` and the same `powerAssertions` rows as `jsonReport`.
+    public static func awakeJSONReport(
+        _ snapshot: ScanSnapshot,
+        groups: [ProcessGroup],
+        homeDirectory: String = NSHomeDirectory()
+    ) throws -> Data {
+        try encoder.encode(makeAwakeReport(snapshot, groups: groups, homeDirectory: homeDirectory))
+    }
+
     public static func jsonReport(
         _ snapshot: ScanSnapshot,
         groups: [ProcessGroup],
@@ -129,6 +157,37 @@ public enum Redactor {
         }
         return lines
     }
+
+    /// The "Keeping the Mac awake:" section, shared by the scan and awake text reports, e.g.
+    /// `- Prevents idle sleep — caffeinate, PID 123, since 14:02 (3 h 12 min), project my-app, name "…"`.
+    private static func awakeLines(_ assertions: [RedactedPowerAssertion], observedAt: Date) -> [String] {
+        var lines = ["Keeping the Mac awake:"]
+        if assertions.isEmpty { lines.append("- none") }
+        for row in assertions {
+            var parts = ["\(row.processName), PID \(row.pid)"]
+            if let startedAt = row.startedAt {
+                let held = row.heldSeconds.map { " (\(PowerAssertion.durationText($0)))" } ?? ""
+                parts.append("since \(clockText(startedAt, observedAt: observedAt))\(held)")
+            }
+            if let timeout = row.timeoutSeconds { parts.append("timeout \(PowerAssertion.durationText(timeout))") }
+            if let creator = row.createdByPID { parts.append("created by \(row.createdByName ?? "PID \(creator)") (PID \(creator))") }
+            parts.append(row.projectDirectory.map { "project \(($0 as NSString).lastPathComponent)" } ?? "Unknown project")
+            parts.append("name \"\(row.name)\"")
+            lines.append("- \(row.effect) — \(parts.joined(separator: ", "))")
+        }
+        return lines
+    }
+
+    /// "14:02" on the day of `observedAt`, "Oct 26 14:02" before it; local time.
+    static func clockText(_ date: Date, observedAt: Date, timeZone: TimeZone = .current) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = calendar.isDate(date, inSameDayAs: observedAt) ? "HH:mm" : "MMM d HH:mm"
+        return formatter.string(from: date)
+    }
 }
 
 private struct RedactedReport: Codable {
@@ -143,6 +202,32 @@ private struct RedactedReport: Codable {
     let groups: [RedactedGroup]
     let findings: [RedactedFinding]
     let listeningPorts: [RedactedPort]
+    let powerAssertions: [RedactedPowerAssertion]
+}
+
+private struct RedactedAwakeReport: Codable {
+    let readAt: Date
+    let notices: [String]
+    let powerAssertions: [RedactedPowerAssertion]
+}
+
+/// The name is sanitized, URLs in it are cut to their host, and it is cut to 80 characters.
+private struct RedactedPowerAssertion: Codable {
+    let pid: Int32
+    let processName: String
+    let groupLabel: String?
+    let projectDirectory: String?
+    /// The raw `AssertType`, e.g. "PreventUserIdleSystemSleep".
+    let type: String
+    /// "Prevents idle sleep", "Prevents sleep" or "Keeps the display on".
+    let effect: String
+    let name: String
+    let startedAt: Date?
+    /// Whole seconds from `startedAt` to the end of the scan (or the read).
+    let heldSeconds: Double?
+    let timeoutSeconds: Double?
+    let createdByPID: Int32?
+    let createdByName: String?
 }
 
 private struct RedactedPortsReport: Codable {
@@ -278,8 +363,36 @@ private extension Redactor {
                     recommendedActions: finding.recommendedActions.map { sanitizer.action($0) }
                 )
             },
-            listeningPorts: portRows(snapshot, groups: groups, sanitizer: sanitizer)
+            listeningPorts: portRows(snapshot, groups: groups, sanitizer: sanitizer),
+            powerAssertions: assertionRows(snapshot, groups: groups, sanitizer: sanitizer)
         )
+    }
+
+    static func makeAwakeReport(_ snapshot: ScanSnapshot, groups: [ProcessGroup], homeDirectory: String) -> RedactedAwakeReport {
+        let sanitizer = Sanitizer(homeDirectory: homeDirectory, groups: groups)
+        return RedactedAwakeReport(readAt: snapshot.startedAt, notices: snapshot.notices.map(sanitizer.text),
+                                   powerAssertions: assertionRows(snapshot, groups: groups, sanitizer: sanitizer))
+    }
+
+    static func assertionRows(_ snapshot: ScanSnapshot, groups: [ProcessGroup], sanitizer: Sanitizer) -> [RedactedPowerAssertion] {
+        let observedAt = snapshot.startedAt.addingTimeInterval(snapshot.interval)
+        return PowerAssertionListing.listings(snapshot, groups: groups).map { listing in
+            let assertion = listing.assertion
+            return RedactedPowerAssertion(
+                pid: listing.identity.pid,
+                processName: sanitizer.text(listing.processName),
+                groupLabel: listing.group.map { sanitizer.text($0.label) },
+                projectDirectory: listing.group?.project.map { sanitizer.text($0.directory) },
+                type: sanitizer.text(assertion.type),
+                effect: assertion.effect?.label ?? sanitizer.text(assertion.type),
+                name: sanitizer.assertionName(assertion.name),
+                startedAt: assertion.startedAt,
+                heldSeconds: assertion.heldSeconds(at: observedAt).map { $0.rounded(.down) },
+                timeoutSeconds: assertion.timeoutSeconds,
+                createdByPID: assertion.createdByPID,
+                createdByName: listing.createdByName.map(sanitizer.text)
+            )
+        }
     }
 
     static func makePortsReport(_ snapshot: ScanSnapshot, groups: [ProcessGroup], homeDirectory: String) -> RedactedPortsReport {
@@ -420,7 +533,35 @@ private struct Sanitizer {
         return redacted
     }
 
+    /// A power assertion's name: each URL cut to its host (`<file URL>` without one), then
+    /// sanitized like any text, then cut to `Redactor.assertionNameLimit` characters.
+    func assertionName(_ raw: String) -> String {
+        let pattern = "(?i)\\b([a-z][a-z0-9+.-]*)://([^\\s/?#\"'<>]*)[^\\s\"'<>]*"
+        var value = raw
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let source = raw as NSString
+            var result = ""
+            var last = 0
+            for match in regex.matches(in: raw, range: NSRange(location: 0, length: source.length)) {
+                result += source.substring(with: NSRange(location: last, length: match.range.location - last))
+                let scheme = source.substring(with: match.range(at: 1)).lowercased()
+                // Drop any user:password@ in front of the host.
+                let authority = source.substring(with: match.range(at: 2))
+                let host = authority.split(separator: "@", omittingEmptySubsequences: false).last.map(String.init) ?? ""
+                result += host.isEmpty ? "<\(scheme) URL>" : host
+                last = match.range.location + match.range.length
+            }
+            value = result + source.substring(from: last)
+        }
+        value = text(value)
+        let limit = Redactor.assertionNameLimit
+        return value.count > limit ? String(value.prefix(limit - 1)) + "…" : value
+    }
+
     func evidence(_ evidence: Evidence) -> RedactedEvidence {
+        if evidence.source == PowerAssertion.evidenceSource {
+            return RedactedEvidence(label: text(evidence.label), value: assertionName(evidence.value), source: evidence.source)
+        }
         let sensitiveContext = (evidence.label + " " + evidence.source).lowercased()
         let value = sensitiveContext.contains("argv") || sensitiveContext.contains("argument") || sensitiveContext.contains("command")
             ? "<arguments redacted>"
