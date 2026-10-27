@@ -5,13 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HeatLens: see what's using your Mac, why, and what you can safely do</title>
   <meta name="description" content="HeatLens is a free, on-demand menu-bar app for Apple Silicon Macs. Click once to see what's using your Mac, why, and what you can safely stop. Fully offline, read-only, open source.">
-  <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f3f3f5" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#151517" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#b8321a">
   <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180">
+  <link rel="preload" href="fonts/instrument-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/instrument-serif-italic-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
+  <script src="clock.js" defer></script>
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="HeatLens">
@@ -30,69 +32,72 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
-  <header class="site-header wrap">
-    <a class="brand" href="#top" aria-label="HeatLens home">
-      <img src="icon-64.png" srcset="icon-128.png 2x" width="28" height="28" alt="">
-      HeatLens
-    </a>
-    <nav class="site-nav" aria-label="Page sections">
-      <a href="#how">How it works</a>
-      <a href="#shows">What it shows</a>
-      <a href="#safety">Safety</a>
-      <a href="#limits">Limits</a>
-      <a href="#faq">FAQ</a>
-      <a href="https://github.com/gorock007/heatlens">GitHub</a>
-    </nav>
-  </header>
-
   <main id="main">
-    <section class="hero wrap" id="top" aria-labelledby="hero-title">
-      <div class="desk">
-        <div class="menubar" aria-hidden="true">
-          <div class="menubar-left">
-            <span class="app">Finder</span>
-            <span class="menu">File</span>
-            <span class="menu">Edit</span>
-            <span class="menu">View</span>
-            <span class="menu">Go</span>
-            <span class="menu">Window</span>
-            <span class="menu">Help</span>
-          </div>
-          <div class="menubar-right">
-            <span class="extra active"><svg class="mark" viewBox="0 0 24 24"><path class="tube" d="M9 4.2a3 3 0 0 1 6 0v9a5.2 5.2 0 1 1-6 0z"/><path class="mercury" d="M12 10.5v5.5" stroke-width="2.4" stroke-linecap="round"/><circle class="mercury" cx="12" cy="17.6" r="2.3"/></svg></span>
-            <svg viewBox="0 0 16 16"><path d="M8 12.6a1.3 1.3 0 1 1 0-2.6 1.3 1.3 0 0 1 0 2.6zM4.9 9.2 3.8 8.1a6 6 0 0 1 8.4 0l-1.1 1.1a4.4 4.4 0 0 0-6.2 0zM2.4 6.7 1.3 5.6a9.5 9.5 0 0 1 13.4 0l-1.1 1.1a8 8 0 0 0-11.2 0z"/></svg>
-            <svg viewBox="0 0 28 16"><rect x="1" y="3" width="22" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="4.8" width="15" height="6.4" rx="1.2"/><path d="M24.5 6.2v3.6a1.8 1.8 0 0 0 0-3.6z"/></svg>
-            <svg viewBox="0 0 16 16"><rect x="1" y="2.5" width="14" height="4.5" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="4.75" r="1.5"/><rect x="1" y="9" width="14" height="4.5" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="11.25" r="1.5"/></svg>
-            <span class="clock">Mon 27 Oct  11:27</span>
-          </div>
-        </div>
+    <!-- ── hero ─────────────────────────────────────────────── -->
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <svg class="hero-scene" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#7a1a14"/>
+            <stop offset=".22" stop-color="#b8321a"/>
+            <stop offset=".45" stop-color="#e8632a"/>
+            <stop offset=".64" stop-color="#ff9a45"/>
+            <stop offset=".8" stop-color="#ffcb7d"/>
+            <stop offset="1" stop-color="#ffe7bd"/>
+          </linearGradient>
+          <radialGradient id="sun" cx=".5" cy=".5" r=".5">
+            <stop offset="0" stop-color="#fff6d6"/>
+            <stop offset=".18" stop-color="#ffe3a0" stop-opacity=".95"/>
+            <stop offset=".45" stop-color="#ffb35c" stop-opacity=".55"/>
+            <stop offset="1" stop-color="#ff8a3d" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="far" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffb978"/>
+            <stop offset="1" stop-color="#f0874b"/>
+          </linearGradient>
+          <linearGradient id="mid" x1="1" y1="0" x2=".2" y2="1">
+            <stop offset="0" stop-color="#e9723d"/>
+            <stop offset=".6" stop-color="#cf4d26"/>
+            <stop offset="1" stop-color="#b53a1d"/>
+          </linearGradient>
+          <linearGradient id="near" x1="0" y1="0" x2=".3" y2="1">
+            <stop offset="0" stop-color="#a8331b"/>
+            <stop offset="1" stop-color="#7c2213"/>
+          </linearGradient>
+          <filter id="soft"><feGaussianBlur stdDeviation="8"/></filter>
+          <filter id="softer"><feGaussianBlur stdDeviation="3"/></filter>
+          <filter id="haze"><feGaussianBlur stdDeviation="14"/></filter>
+        </defs>
+        <rect width="1440" height="900" fill="url(#sky)"/>
+        <g class="sun">
+          <circle cx="720" cy="610" r="470" fill="url(#sun)"/>
+          <circle cx="720" cy="610" r="92" fill="#fff4d2" opacity=".9" filter="url(#softer)"/>
+        </g>
+        <g class="shimmer" filter="url(#haze)" fill="#fff3d9">
+          <ellipse cx="420" cy="560" rx="380" ry="10" opacity=".35"/>
+          <ellipse cx="1040" cy="585" rx="420" ry="9" opacity=".3"/>
+          <ellipse cx="720" cy="530" rx="520" ry="7" opacity=".25"/>
+        </g>
+        <path fill="url(#far)" opacity=".9" filter="url(#soft)" d="M0 640 110 590 220 612 330 566 430 598 540 556 640 584 720 560 810 590 910 552 1010 586 1120 548 1230 584 1330 556 1440 580V900H0z"/>
+        <path fill="url(#mid)" filter="url(#softer)" d="M0 700C120 668 210 640 320 652S520 700 640 690 860 640 980 646 1220 690 1440 664V900H0z"/>
+        <path fill="url(#near)" d="M0 772C160 742 300 726 470 738S760 790 930 780 1250 730 1440 748V900H0z"/>
+      </svg>
 
-        <div class="desk-body">
-          <div class="hero-copy">
-            <h1 id="hero-title"><span class="lead">Click once.</span> See what's using your Mac, why, and what you can safely do.</h1>
-            <p class="sub">HeatLens is a free menu-bar app for Apple Silicon Macs. It takes a short sample when you ask, ties busy processes to the projects and tools that started them, separates active work from possible leftovers, and never stops anything without asking you first.</p>
-            <div class="cta">
-              <a class="button" href="https://github.com/gorock007/heatlens/releases/latest/download/HeatLens.dmg">
-                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.28a.75.75 0 0 1-1.06 0L4.19 7.75a.75.75 0 0 1 1.06-1.06l2 2V2.25A.75.75 0 0 1 8 1.5zM2.75 11a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-2.25a.75.75 0 0 1 .75-.75z"/></svg>
-                Download for Mac
-              </a>
-              <a class="ghost" href="https://github.com/gorock007/heatlens">View on GitHub</a>
-            </div>
-            <p class="cta-meta">macOS 14 or later · Apple Silicon · free · signed and notarized</p>
-          </div>
-
-          <div class="popover-anchor">
-            <figure class="mock" role="img" aria-label="The HeatLens popover after a 10-second scan. Headline: High load observed. Overview: thermal state unavailable, 3.2 of 11 cores busy, memory pressure normal, 8.5 GB of 10 GB swap used. A Medium finding says the OpenCode agent is the top CPU contributor at 44% of one core across 2 processes. A Review finding flags a possible leftover development worker: node worker.js, PID 12874, running 2 days 5 hours, 0% CPU, parent PID 1, with a note that this does not prove it is unused. Buttons offer Inspect details, Open project, Copy command, Activity Monitor and, for the leftover, Request stop.">
+      <!-- the menu bar stands in for CrewTower's notch: click the thermometer -->
+      <div class="menubar" aria-label="Interactive demo">
+        <details class="demo">
+          <summary aria-label="Open the HeatLens demo popover">
+            <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path class="tube" d="M9 4.2a3 3 0 0 1 6 0v9a5.2 5.2 0 1 1-6 0z"/><path class="mercury" d="M12 10.5v5.5" stroke-width="2.4" stroke-linecap="round"/><circle class="mercury" cx="12" cy="17.6" r="2.3"/></svg>
+          </summary>
+          <div class="demo-pop">
+            <figure class="mock" role="img" aria-label="The HeatLens popover after a 10-second scan. Headline: High load observed. Overview: thermal state unavailable, 3.2 of 11 cores busy, memory pressure normal, 8.5 GB of 10 GB swap used. A Medium finding says the OpenCode agent is the top CPU contributor at 44% of one core across 2 processes. A Review finding flags a possible leftover development worker: node worker.js, PID 12874, running 2 days 5 hours, 0% CPU, parent PID 1, with a note that this does not prove it is unused.">
               <div class="popover tail" aria-hidden="true">
                 <div class="pv-header">
                   <span class="pv-headline">HeatLens</span>
                   <svg class="gear" viewBox="0 0 16 16"><path d="M6.7 1.3h2.6l.4 1.7c.4.1.8.3 1.1.5l1.6-.8 1.8 1.8-.8 1.6c.2.3.4.7.5 1.1l1.7.4v2.6l-1.7.4c-.1.4-.3.8-.5 1.1l.8 1.6-1.8 1.8-1.6-.8c-.3.2-.7.4-1.1.5l-.4 1.7H6.7l-.4-1.7c-.4-.1-.8-.3-1.1-.5l-1.6.8-1.8-1.8.8-1.6c-.2-.3-.4-.7-.5-1.1l-1.7-.4V6.7l1.7-.4c.1-.4.3-.8.5-1.1l-.8-1.6 1.8-1.8 1.6.8c.3-.2.7-.4 1.1-.5zM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/></svg>
                 </div>
-                <div>
-                  <div class="pv-headline">High load observed</div>
-                  <div class="pv-sub">10-second sample</div>
-                </div>
-
+                <div class="pv-headline">High load observed</div>
+                <div class="pv-sub">10-second sample</div>
                 <div class="pv-scroll">
                   <div class="pv-stack">
                     <div class="pv-section">
@@ -104,236 +109,469 @@
                         <dt>Swap</dt><dd>8.5 GB of 10 GB used</dd>
                       </dl>
                     </div>
-
                     <div class="pv-section">
                       <div class="pv-section-title">Findings</div>
                       <div class="pv-card">
                         <div class="title">OpenCode agent is the top CPU contributor</div>
                         <div class="chips"><span class="chip medium">Medium</span><span class="chip info">High confidence</span></div>
                         <div>OpenCode used 44% CPU (of one core) across 2 processes. Its working directory suggests active agent work in jarvis-demo.</div>
-                        <div class="pv-disclosure"><svg class="chev" viewBox="0 0 8 8"><path d="M2 1l4 3-4 3z"/></svg>Evidence</div>
-                        <div class="pv-caption">Project attribution comes from the working directory, not from reading project files.</div>
                         <div class="pv-caption">Being busy does not mean it is the cause of heat.</div>
-                        <div class="pv-actions"><span class="pv-btn">Inspect details</span><span class="pv-btn">Open project</span><span class="pv-btn">Copy command</span><span class="pv-btn">Activity Monitor</span></div>
+                        <div class="pv-actions"><span class="pv-btn">Inspect details</span><span class="pv-btn">Open project</span><span class="pv-btn">Copy command</span></div>
                       </div>
                     </div>
-
                     <div class="pv-section">
                       <div class="pv-section-title">Potential leftovers</div>
                       <div class="pv-card">
                         <div class="title">Possible leftover development worker</div>
                         <div class="chips"><span class="chip review">Review</span><span class="chip info">Medium confidence</span></div>
-                        <div>node …/scripts/worker.js · PID 12874 · elapsed 2d 5h · 0% CPU in sample · PPID 1. Long-lived project worker whose parent was adopted by launchd. Stopping it is unlikely to fix current heat.</div>
-                        <div class="pv-disclosure"><svg class="chev" viewBox="0 0 8 8"><path d="M2 1l4 3-4 3z"/></svg>Evidence</div>
+                        <div>node …/scripts/worker.js · PID 12874 · elapsed 2d 5h · 0% CPU in sample · PPID 1.</div>
                         <div class="pv-caption">This does not prove it is unused.</div>
-                        <div class="pv-actions"><span class="pv-btn">Inspect details</span><span class="pv-btn">Open project</span><span class="pv-btn">Copy command</span><span class="pv-btn destructive">Request stop</span></div>
+                        <div class="pv-actions"><span class="pv-btn">Inspect details</span><span class="pv-btn destructive">Request stop</span></div>
                       </div>
-                    </div>
-
-                    <div class="pv-section">
-                      <div class="pv-section-title">What's using resources</div>
-                      <div class="pv-group"><svg class="chev" viewBox="0 0 8 8"><path d="M2 1l4 3-4 3z"/></svg><span class="label">OpenCode agent</span><span class="meta">44% CPU (of one core) · 2 processes</span></div>
-                      <div class="pv-group"><svg class="chev" viewBox="0 0 8 8"><path d="M2 1l4 3-4 3z"/></svg><span class="label">Safari</span><span class="meta">13% CPU (of one core) · 1 process</span></div>
-                      <div class="pv-group"><svg class="chev" viewBox="0 0 8 8"><path d="M2 1l4 3-4 3z"/></svg><span class="label">Next.js dev server</span><span class="meta">1.4% CPU (of one core) · 3 processes</span></div>
                     </div>
                   </div>
                 </div>
-
-                <div class="pv-row start"><span class="pv-btn regular">Copy report</span><span class="pv-btn regular">Copy JSON</span></div>
                 <div class="pv-row"><span class="pv-btn regular">Done</span><span class="pv-btn regular prominent">Scan again</span></div>
-                <div class="pv-rule"></div>
-                <div class="pv-row end"><span class="pv-btn regular">Quit HeatLens</span></div>
               </div>
             </figure>
           </div>
+        </details>
+        <span class="mb-icons" aria-hidden="true">
+          <svg viewBox="0 0 16 16"><path d="M8 12.6a1.3 1.3 0 1 1 0-2.6 1.3 1.3 0 0 1 0 2.6zM4.9 9.2 3.8 8.1a6 6 0 0 1 8.4 0l-1.1 1.1a4.4 4.4 0 0 0-6.2 0zM2.4 6.7 1.3 5.6a9.5 9.5 0 0 1 13.4 0l-1.1 1.1a8 8 0 0 0-11.2 0z"/></svg>
+          <svg viewBox="0 0 28 16"><rect x="1" y="3" width="22" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.8" y="4.8" width="15" height="6.4" rx="1.2"/><path d="M24.5 6.2v3.6a1.8 1.8 0 0 0 0-3.6z"/></svg>
+          <time class="clock" hidden></time>
+        </span>
+      </div>
+      <p class="demo-invite" aria-hidden="true">
+        <svg viewBox="0 0 17 21"><path d="M3 19c0-7 4-11 11-12M10 3l4 4-4 4"/></svg>
+        <span>Click the thermometer. Try HeatLens.</span>
+      </p>
+
+      <header class="masthead">
+        <a class="brand" href="#top" aria-label="HeatLens home">
+          <img src="icon-64.png" srcset="icon-128.png 2x" width="34" height="34" alt="">
+          HeatLens
+        </a>
+        <div class="masthead-right">
+          <a class="btn btn-primary btn-sm" href="https://github.com/gorock007/heatlens/releases/latest/download/HeatLens.dmg">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.28a.75.75 0 0 1-1.06 0L4.19 7.75a.75.75 0 0 1 1.06-1.06l2 2V2.25A.75.75 0 0 1 8 1.5zM2.75 11a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-2.25a.75.75 0 0 1 .75-.75z"/></svg>
+            Download for Mac
+          </a>
+          <a class="gh" href="https://github.com/gorock007/heatlens" aria-label="HeatLens on GitHub">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 .2a8 8 0 0 0-2.53 15.6c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.66 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2z"/></svg>
+          </a>
+          <nav class="masthead-nav" aria-label="Page sections">
+            <a href="#how">How it works</a>
+            <a href="#shows">What it shows</a>
+            <a href="#safety">Safety</a>
+            <a href="#limits">Limits</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+        </div>
+      </header>
+
+      <div class="hero-inner">
+        <p class="kicker">A short sample, only when you ask</p>
+        <h1 id="hero-title" class="hero-line">
+          <span class="hero-line-main">Why is my Mac</span>
+          <span class="hero-line-accent">running hot?</span>
+        </h1>
+        <p class="hero-sub">HeatLens is a free menu-bar app for Apple Silicon Macs. Click once to see what's using your Mac, which project and tool started it, and what you can safely stop. It never stops anything without asking you first.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://github.com/gorock007/heatlens/releases/latest/download/HeatLens.dmg">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.28a.75.75 0 0 1-1.06 0L4.19 7.75a.75.75 0 0 1 1.06-1.06l2 2V2.25A.75.75 0 0 1 8 1.5zM2.75 11a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-2.25a.75.75 0 0 1 .75-.75z"/></svg>
+            Download for Mac
+          </a>
+          <a class="btn btn-ghost" href="#how">See how it works
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v10M3.5 8.5 8 13l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
+        <p class="hero-meta">macOS 14 or later · Apple Silicon · free · signed and notarized</p>
+
+        <div class="readouts">
+          <p class="readouts-label">One scan reads</p>
+          <ul>
+            <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4.5a2 2 0 0 1 4 0v9.2a4 4 0 1 1-4 0z"/><path d="M12 10v6"/></svg>Thermal state</li>
+            <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg>CPU per process</li>
+            <li><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 7v10M11 7v10M15 7v10"/></svg>Memory and swap</li>
+            <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 11 15.7 7M8.3 13l7.4 4"/></svg>Ports</li>
+            <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>Sleep blockers</li>
+          </ul>
         </div>
       </div>
     </section>
 
+    <!-- ── overview ─────────────────────────────────────────── -->
+    <section class="overview" aria-labelledby="overview-title">
+      <div class="wrap">
+        <div class="head center reveal">
+          <p class="eyebrow">Stay with what you're doing</p>
+          <h2 id="overview-title" class="h-lg">Less guessing. <em>More knowing.</em></h2>
+          <p class="lede">A dev server from yesterday. An agent still thinking. A caffeinate a script forgot. HeatLens ties each busy process to the project and tool behind it, so you can tell work from leftovers at a glance.</p>
+        </div>
+        <ul class="ov-grid reveal">
+          <li>
+            <div class="ov-source">
+              <span class="ov-mark m-ember" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></span>
+              <span>OpenCode agent<small>~/Projects/jarvis-demo</small></span>
+              <span class="ov-state s-active">Active work</span>
+            </div>
+            <h3>Top CPU contributor</h3>
+            <p>44% of one core across 2 processes. Ranked as work in progress, not junk.</p>
+          </li>
+          <li>
+            <div class="ov-source">
+              <span class="ov-mark m-amber" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 18 12 5l7 13z"/></svg></span>
+              <span>next dev<small>~/Projects/portfolio-demo</small></span>
+              <span class="ov-state s-review">Review</span>
+            </div>
+            <h3>Long-running dev server</h3>
+            <p>Up for 38 hours at 1.4% CPU. The card notes you may still have it open in a tab.</p>
+          </li>
+          <li>
+            <div class="ov-source">
+              <span class="ov-mark m-rose" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19 14.5A7 7 0 0 1 9.5 5a7 7 0 1 0 9.5 9.5z"/></svg></span>
+              <span>caffeinate<small>PID 4120</small></span>
+              <span class="ov-state s-info">Info</span>
+            </div>
+            <h3>Holding off sleep</h3>
+            <p>Since 14:02, from a script in portfolio-demo. Shown as information, not a fault.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ── how it works ─────────────────────────────────────── -->
     <section class="section" id="how" aria-labelledby="how-title">
       <div class="wrap">
-        <div class="section-head">
-          <h2 id="how-title">How it works</h2>
-          <p>HeatLens lives in the menu bar, has no Dock icon, and does nothing until you ask. One scan is a short, bounded sample; there is no background monitoring and no history.</p>
+        <div class="head reveal">
+          <p class="eyebrow">How it works</p>
+          <h2 id="how-title" class="h-lg">Click, sample, <em>read.</em></h2>
+          <p class="lede">HeatLens lives in the menu bar, has no Dock icon, and does nothing until you ask. One scan is a short, bounded sample. There is no background monitoring and no history.</p>
         </div>
-        <ol class="steps">
-          <li class="step">
-            <h3>Click the thermometer</h3>
-            <p>The popover opens at once. It shows when you last scanned and one button. Until you press it, nothing is being measured.</p>
-            <figure class="mock" role="img" aria-label="The idle popover: Last scan: never, a Scan now button, and the note Nothing is monitored until you scan.">
-              <div class="popover" aria-hidden="true">
+        <ol class="cards">
+          <li class="card reveal">
+            <figure class="art t-amber" role="img" aria-label="The idle popover: Last scan: never, a Scan now button, and the note Nothing is monitored until you scan.">
+              <div class="popover narrow" aria-hidden="true">
                 <div class="pv-header"><span class="pv-headline">HeatLens</span><svg class="gear" viewBox="0 0 16 16"><path d="M6.7 1.3h2.6l.4 1.7c.4.1.8.3 1.1.5l1.6-.8 1.8 1.8-.8 1.6c.2.3.4.7.5 1.1l1.7.4v2.6l-1.7.4c-.1.4-.3.8-.5 1.1l.8 1.6-1.8 1.8-1.6-.8c-.3.2-.7.4-1.1.5l-.4 1.7H6.7l-.4-1.7c-.4-.1-.8-.3-1.1-.5l-1.6.8-1.8-1.8.8-1.6c-.2-.3-.4-.7-.5-1.1l-1.7-.4V6.7l1.7-.4c.1-.4.3-.8.5-1.1l-.8-1.6 1.8-1.8 1.6.8c.3-.2.7-.4 1.1-.5zM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/></svg></div>
                 <div class="pv-text secondary">Last scan: never</div>
                 <div class="pv-row"><span class="pv-btn large prominent">Scan now</span></div>
                 <div class="pv-caption spaced">Nothing is monitored until you scan.</div>
-                <div class="pv-rule"></div>
-                <div class="pv-row end"><span class="pv-btn regular">Quit HeatLens</span></div>
               </div>
             </figure>
+            <h3>Click the thermometer.</h3>
+            <p>The popover opens at once. It shows when you last scanned and one button. Until you press it, nothing is being measured.</p>
           </li>
-          <li class="step">
-            <h3>Scan for ten seconds</h3>
-            <p>HeatLens measures how much CPU each process actually used over the sample, as the change between two readings, not the lifetime total. You can pick 5, 10 or 15 seconds in Settings, and cancel at any time.</p>
-            <figure class="mock" role="img" aria-label="The scanning popover: Measuring process activity (7 of 10 seconds), a progress bar, and a Cancel button.">
-              <div class="popover" aria-hidden="true">
+          <li class="card reveal">
+            <figure class="art t-coral" role="img" aria-label="The scanning popover: Measuring process activity (7 of 10 seconds), a progress bar, and a Cancel button.">
+              <div class="popover narrow" aria-hidden="true">
                 <div class="pv-header"><span class="pv-headline">HeatLens</span><svg class="gear" viewBox="0 0 16 16"><path d="M6.7 1.3h2.6l.4 1.7c.4.1.8.3 1.1.5l1.6-.8 1.8 1.8-.8 1.6c.2.3.4.7.5 1.1l1.7.4v2.6l-1.7.4c-.1.4-.3.8-.5 1.1l.8 1.6-1.8 1.8-1.6-.8c-.3.2-.7.4-1.1.5l-.4 1.7H6.7l-.4-1.7c-.4-.1-.8-.3-1.1-.5l-1.6.8-1.8-1.8.8-1.6c-.2-.3-.4-.7-.5-1.1l-1.7-.4V6.7l1.7-.4c.1-.4.3-.8.5-1.1l-.8-1.6 1.8-1.8 1.6.8c.3-.2.7-.4 1.1-.5zM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/></svg></div>
                 <div class="pv-text">Measuring process activity (7 of 10 seconds)</div>
                 <div class="pv-progress"><span></span></div>
                 <div class="pv-row end"><span class="pv-btn regular">Cancel</span></div>
-                <div class="pv-rule"></div>
-                <div class="pv-row end"><span class="pv-btn regular">Quit HeatLens</span></div>
               </div>
             </figure>
+            <h3>Scan for ten seconds.</h3>
+            <p>HeatLens measures how much CPU each process used over the sample, as the change between two readings, not the lifetime total. Pick 5, 10 or 15 seconds in Settings, and cancel any time.</p>
           </li>
-          <li class="step">
-            <h3>Read what it found</h3>
-            <p>A one-line status first: High load observed, Thermal pressure reported, Memory pressure, or No significant issue observed. Then ranked findings, each with its evidence, a confidence level, what it cannot prove, and the safe actions.</p>
-            <figure class="mock" role="img" aria-label="A finding card: Long-running dev server, Review, Medium confidence. next dev for portfolio-demo has been running for 38 hours and used 1.4% CPU in the sample. Evidence lists the command, elapsed time and memory. A note says you may still be using this server in a browser tab.">
-              <div class="popover" aria-hidden="true">
+          <li class="card reveal">
+            <figure class="art t-rose" role="img" aria-label="A finding card: Long-running dev server, Review, Medium confidence. next dev for portfolio-demo has been running for 38 hours and used 1.4% CPU in the sample. Evidence lists the command and elapsed time.">
+              <div class="popover card-only" aria-hidden="true">
                 <div class="pv-card">
                   <div class="title">Long-running dev server</div>
                   <div class="chips"><span class="chip review">Review</span><span class="chip info">Medium confidence</span></div>
                   <div>next dev for portfolio-demo has been running for 38h and used 1.4% CPU in the sample.</div>
-                  <div class="pv-disclosure"><svg class="chev open" viewBox="0 0 8 8"><path d="M2 1l4 3-4 3z"/></svg>Evidence</div>
-                  <div class="pv-caption">Command: npm run dev → next dev → next-server <span class="pv-tertiary">argv</span></div>
+                  <div class="pv-caption">Command: npm run dev → next dev <span class="pv-tertiary">argv</span></div>
                   <div class="pv-caption">Elapsed: 1d 14h <span class="pv-tertiary">proc_pidinfo</span></div>
-                  <div class="pv-caption">Memory: 810 MB across 3 processes <span class="pv-tertiary">proc_pid_rusage</span></div>
-                  <div class="pv-caption">You may still be using this server in a browser tab.</div>
-                  <div class="pv-actions"><span class="pv-btn">Inspect details</span><span class="pv-btn">Open project</span><span class="pv-btn">Copy command</span><span class="pv-btn destructive">Request stop</span></div>
+                  <div class="pv-actions"><span class="pv-btn">Inspect details</span><span class="pv-btn destructive">Request stop</span></div>
                 </div>
               </div>
             </figure>
+            <h3>Read what it found.</h3>
+            <p>A one-line status first, then ranked findings. Each has its evidence, a confidence level, what it cannot prove, and the safe actions.</p>
           </li>
         </ol>
       </div>
     </section>
 
-    <section class="section" id="shows" aria-labelledby="shows-title">
+    <!-- ── what it shows ────────────────────────────────────── -->
+    <section class="section section-tight" id="shows" aria-labelledby="shows-title">
       <div class="wrap">
-        <div class="section-head">
-          <h2 id="shows-title">What it shows</h2>
-          <p>Observation and inference are kept apart. Every number names the sample it came from, and every label says how sure HeatLens is.</p>
+        <div class="head reveal">
+          <p class="eyebrow">What it shows</p>
+          <h2 id="shows-title" class="h-lg">Every number names <em>its sample.</em></h2>
+          <p class="lede">Observation and inference are kept apart. Every figure says where it came from, and every label says how sure HeatLens is.</p>
         </div>
-        <div class="columns">
-          <div>
-            <h3>Active work, then leftovers</h3>
-            <p>Findings are ranked by measured impact right now. A video export at 80% CPU is listed as active work, not junk. A two-day-old idle worker with parent PID 1 goes under Potential leftovers as a review candidate, never as a verdict, and the card says plainly that stopping it is unlikely to cool your Mac.</p>
-            <div class="sample"><span class="k">Review · Medium confidence</span><br>Possible leftover development worker</div>
-          </div>
-          <div>
-            <h3>Where a process came from</h3>
-            <p>Processes are grouped by their parent tree and the tool that started them: Next.js, Vite, Vitest, Claude Code, OpenCode, generic Node and the rest. The project folder comes from the process's working directory or script path, with a confidence level. When HeatLens cannot tell, it says Unknown project rather than guessing.</p>
-            <div class="sample"><span class="k">Project</span> ~/Projects/portfolio-demo<br><span class="k">From</span> cwd · High confidence<br><span class="k">Parent chain</span> npm (PID 23001) ← launchd (PID 1, not in snapshot)</div>
-          </div>
-          <div>
-            <h3>Thermal and memory state</h3>
-            <p>The overview reports the thermal state macOS itself publishes (nominal, fair, serious or critical), how many cores were busy, memory pressure and swap. There is no temperature reading and no GPU percentage, because no supported API provides a reliable one. WindowServer activity is shown as UI rendering, not as GPU load.</p>
-            <div class="sample"><span class="k">Thermal state</span> Nominal<br><span class="k">CPU load</span> 3.2 of 11 cores busy<br><span class="k">Memory pressure</span> Normal</div>
-          </div>
-          <div>
-            <h3>Who holds each port</h3>
-            <p>After a scan, a Ports section shows which process and which project holds each listening TCP port. Click a row to inspect it, then use the usual actions.</p>
-            <div class="sample"><span class="k">:3000</span> next-server · PID 23014<br><span class="k">Scope</span> loopback<br><span class="k">Project</span> ~/Projects/portfolio-demo</div>
-          </div>
-          <div>
-            <h3>Ask your AI agent</h3>
-            <p>HeatLens ships a read-only MCP server. Settings → Connect to an AI agent copies the setup command for Claude Code or Codex, and then you can ask your agent "why is my Mac hot?". The agent can run a scan, list ports or see what's keeping the Mac awake, but it can't stop anything, and reports are always redacted.</p>
-            <div class="sample"><span class="k">Tools</span> scan · ports · awake<br><span class="k">Mode</span> Read-only, redacted</div>
-          </div>
-          <div>
-            <h3>From the terminal</h3>
-            <p>The same read-only tool works in a terminal. It ships inside the app at <code>HeatLens.app/Contents/Helpers/heatlens</code>; run a scan or list ports and get the same redacted report as text or JSON.</p>
-            <div class="sample"><code>heatlens scan --seconds 5</code><br><code>heatlens ports --json</code><br><code>heatlens awake</code></div>
-          </div>
-          <div>
-            <h3>What's keeping it awake</h3>
-            <p>When your Mac won't sleep or the display stays on, the results show which process is holding it awake, in which project, and since when: a caffeinate left by a script, a download, a video call. Media and downloads keep a Mac awake on purpose, so this is listed as information, not as a fault.</p>
-            <div class="sample"><span class="k">Prevents idle sleep</span> caffeinate · PID 4120<br><span class="k">Since</span> 14:02 (3 h 12 min)<br><span class="k">Project</span> ~/Projects/portfolio-demo</div>
-          </div>
-          <div>
-            <h3>A heads-up when it runs hot</h3>
-            <p>Optional and off by default. Turn it on in Settings and, when macOS reports serious thermal pressure, HeatLens runs one scan and sends one notification naming the likely culprit, at most every 30 minutes. It listens for macOS's own thermal event, so nothing runs in between. You can also turn on ⌃⌥H to open HeatLens from anywhere.</p>
-            <div class="sample"><span class="k">Your Mac is running hot</span><br>next dev in portfolio-demo · 182% CPU</div>
-          </div>
-          <div>
-            <h3>Clear a project's leftovers</h3>
-            <p>When one project has left several dev servers or workers behind, one confirmation lists them all with a checkbox each. HeatLens stops the ones you keep ticked one at a time, checking each is still the same process right before it signals it. Scan again and Since last scan shows what changed and what's gone. Nothing is stored after you quit.</p>
-            <div class="sample"><span class="k">Since last scan</span> 4 min ago<br><span class="k">CPU</span> 6.1 → 1.4 cores<br><span class="k">Gone</span> next dev (portfolio-demo)</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="safety" aria-labelledby="safety-title">
-      <div class="wrap">
-        <div class="section-head">
-          <h2 id="safety-title">Safe by construction</h2>
-          <p>HeatLens reads. The one thing it can change on your Mac is to send a single, polite stop signal to a process you own, and only after you have read the confirmation and clicked.</p>
-        </div>
-        <div class="split">
-          <ul class="facts">
-            <li>
-              <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 16 0M4 12v5h3v-5zm13 0v5h3v-5z"/><path d="M12 4v2"/></svg>
-              <strong>Fully offline</strong>
-              <p>No network access except a check for updates when you click it, no account, no telemetry, no analytics, no crash reports. The only thing stored is your settings, and no scan history is kept.</p>
-            </li>
-            <li>
-              <svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></svg>
-              <strong>Read-only diagnosis</strong>
-              <p>HeatLens looks at the process table and system counters that macOS exposes to any app. It never opens your files, terminal history, environment variables or agent transcripts, and it asks for no permissions: no Full Disk Access, no Accessibility, no Screen Recording, no admin password.</p>
-            </li>
-            <li>
-              <svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v6c0 4.5-3.2 7.8-7.5 9-4.3-1.2-7.5-4.5-7.5-9V6z"/><path d="M9 12.2l2 2 4-4.2"/></svg>
-              <strong>A stop is one SIGTERM, confirmed</strong>
-              <p>Request stop opens a sheet with the PID, command, project and measured impact, and a warning about what might be interrupted. Only then is one SIGTERM sent to that one PID, after re-checking that the PID still belongs to the same process. There is no force-quit, no bulk kill, and HeatLens tells you what happened.</p>
-            </li>
-            <li>
-              <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <strong>Protected processes never get a stop control</strong>
-              <p>kernel_task, WindowServer, launchd, loginwindow, Finder, the Dock, Spotlight, anything owned by root or another user, and any Apple system binary are shown without a Request stop button. HeatLens only stops processes you own.</p>
-            </li>
-          </ul>
-
-          <div class="popover-anchor">
-            <figure class="mock" role="img" aria-label="The stop confirmation sheet. Title: Send SIGTERM? PID 12874. Command: node worker.js in the demo-site project. Project: ~/Projects/demo-site. Impact: 0.0% CPU in this sample, stopping it is unlikely to cool your Mac. Warning: Stopping a dev server or agent can interrupt tests, edits, builds or active sessions. Buttons: Cancel, which is the default, and Send SIGTERM.">
-              <div class="popover sheet" aria-hidden="true">
-                <div class="pv-headline">Send SIGTERM?</div>
-                <dl class="pv-grid tight">
-                  <dt>PID</dt><dd>12874</dd>
-                  <dt>Command</dt><dd>/usr/local/bin/node ~/Projects/demo-site/scripts/worker.js</dd>
-                  <dt>Project</dt><dd>~/Projects/demo-site</dd>
-                  <dt>Impact</dt><dd>0.0% CPU in this sample — stopping it is unlikely to cool your Mac.</dd>
-                </dl>
-                <div class="pv-caption strong">Stopping a dev server or agent can interrupt tests, edits, builds or active sessions.</div>
-                <div class="pv-row snug"><span class="pv-btn regular prominent">Cancel</span><span class="pv-btn regular destructive">Send SIGTERM</span></div>
+        <ul class="cards">
+          <li class="card reveal">
+            <figure class="art t-amber" role="img" aria-label="A Potential leftovers card for node worker.js, PID 12874, idle for two days with parent PID 1, marked Review.">
+              <div class="popover card-only" aria-hidden="true">
+                <div class="pv-section-title">Potential leftovers</div>
+                <div class="pv-card">
+                  <div class="title">Possible leftover development worker</div>
+                  <div class="chips"><span class="chip review">Review</span><span class="chip info">Medium confidence</span></div>
+                  <div>node …/worker.js · PID 12874 · 2d 5h · 0% CPU · PPID 1</div>
+                  <div class="pv-caption">Stopping it is unlikely to fix current heat.</div>
+                </div>
               </div>
             </figure>
-            <p class="aside-note">Cancel is the default button. If the process ignores the signal, HeatLens reports that it is still running and leaves it alone.</p>
+            <h3>Active work, then leftovers.</h3>
+            <p>Findings are ranked by measured impact right now. A video export at 80% CPU is active work, not junk. A two-day-old idle worker with parent PID 1 is a review candidate, never a verdict.</p>
+          </li>
+          <li class="card reveal">
+            <figure class="art t-coral" role="img" aria-label="Provenance details: project ~/Projects/portfolio-demo, from the working directory with high confidence, parent chain npm then launchd.">
+              <div class="popover card-only" aria-hidden="true">
+                <div class="pv-section-title">next-server · PID 23014</div>
+                <dl class="pv-grid">
+                  <dt>Project</dt><dd>~/Projects/portfolio-demo</dd>
+                  <dt>From</dt><dd>cwd · High confidence</dd>
+                  <dt>Tool</dt><dd>Next.js dev server</dd>
+                  <dt>Parents</dt><dd>npm (23001) ← launchd (1)</dd>
+                </dl>
+              </div>
+            </figure>
+            <h3>Where a process came from.</h3>
+            <p>Processes are grouped by parent tree and the tool that started them. The project comes from the working directory or script path, with a confidence level. When it can't tell, it says Unknown project.</p>
+          </li>
+          <li class="card reveal">
+            <figure class="art t-rose" role="img" aria-label="Overview: thermal state nominal, 3.2 of 11 cores busy, memory pressure normal, swap 8.5 of 10 GB used.">
+              <div class="popover card-only" aria-hidden="true">
+                <div class="pv-section-title">Overview</div>
+                <dl class="pv-grid">
+                  <dt>Thermal state</dt><dd>Nominal</dd>
+                  <dt>CPU load</dt><dd>3.2 of 11 cores busy</dd>
+                  <dt>Memory pressure</dt><dd>Normal</dd>
+                  <dt>Swap</dt><dd>8.5 GB of 10 GB used</dd>
+                </dl>
+                <div class="meter" aria-hidden="true"><span></span></div>
+              </div>
+            </figure>
+            <h3>Thermal and memory state.</h3>
+            <p>The thermal state macOS itself publishes, busy cores, memory pressure and swap. No temperature reading and no GPU percentage, because no supported API provides a reliable one.</p>
+          </li>
+          <li class="card reveal">
+            <figure class="art t-amber" role="img" aria-label="A Ports list: port 3000 held by next-server in portfolio-demo, port 5173 held by vite in storefront, both on loopback.">
+              <div class="popover card-only" aria-hidden="true">
+                <div class="pv-section-title">Ports</div>
+                <div class="pv-port"><span class="port">:3000</span><span>next-server · PID 23014<small>portfolio-demo · loopback</small></span></div>
+                <div class="pv-port"><span class="port">:5173</span><span>vite · PID 31877<small>storefront · loopback</small></span></div>
+              </div>
+            </figure>
+            <h3>Who holds each port.</h3>
+            <p>After a scan, a Ports section shows which process and which project holds each listening TCP port. Click a row to inspect it, then use the usual actions.</p>
+          </li>
+          <li class="card reveal">
+            <figure class="art t-coral" role="img" aria-label="A terminal: the user asks their AI agent why the Mac is hot, and the agent calls the read-only HeatLens scan tool.">
+              <div class="term" aria-hidden="true">
+                <div class="term-bar"><i></i><i></i><i></i></div>
+                <div class="term-body">
+                  <div><span class="prompt">&gt;</span> why is my Mac hot?</div>
+                  <div class="dim">⏺ heatlens · scan <span class="tag">read-only</span></div>
+                  <div>next dev in portfolio-demo is using 182% CPU. It has run for 38h.</div>
+                </div>
+              </div>
+            </figure>
+            <h3>Ask your AI agent.</h3>
+            <p>A read-only MCP server ships inside the app. Settings copies the setup command for Claude Code or Codex. Your agent can scan, list ports or check what's keeping the Mac awake, but it can't stop anything, and reports are redacted.</p>
+          </li>
+          <li class="card reveal">
+            <figure class="art t-rose" role="img" aria-label="Keeping your Mac awake: caffeinate, PID 4120, prevents idle sleep since 14:02, for 3 hours 12 minutes, in portfolio-demo.">
+              <div class="popover card-only" aria-hidden="true">
+                <div class="pv-section-title">Keeping your Mac awake</div>
+                <dl class="pv-grid">
+                  <dt>Prevents</dt><dd>Idle sleep</dd>
+                  <dt>Process</dt><dd>caffeinate · PID 4120</dd>
+                  <dt>Since</dt><dd>14:02 (3 h 12 min)</dd>
+                  <dt>Project</dt><dd>~/Projects/portfolio-demo</dd>
+                </dl>
+              </div>
+            </figure>
+            <h3>What's keeping it awake.</h3>
+            <p>When your Mac won't sleep, the results show which process holds it awake, in which project, and since when. Media and downloads do this on purpose, so it's listed as information.</p>
+          </li>
+        </ul>
+
+        <ul class="minis">
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8l4 4-4 4M12 16h7"/></svg></span>
+            <h3>From the terminal</h3>
+            <p>The same read-only tool ships at <code>HeatLens.app/Contents/Helpers/heatlens</code>. Scan or list ports, as text or JSON.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5h4"/></svg></span>
+            <h3>A heads-up when it runs hot</h3>
+            <p>Optional, off by default. On serious thermal pressure, one scan and one notification naming the likely culprit, at most every 30 minutes.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><path d="M5.5 7l1.2 1.2L9 5.8M13 7h7M13 17h7"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><path d="M5.5 17l1.2 1.2L9 15.8"/></svg></span>
+            <h3>Clear a project's leftovers</h3>
+            <p>One confirmation lists every leftover with a checkbox. Each one is re-checked right before HeatLens signals it.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4"/></svg></span>
+            <h3>Since last scan</h3>
+            <p>Scan again to see what changed: CPU 6.1 → 1.4 cores, and which processes are gone.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h1M11 10h1M15 10h2M7 14h10"/></svg></span>
+            <h3>Open it from anywhere</h3>
+            <p>Turn on ⌃⌥H in Settings and HeatLens opens from any app, without reaching for the menu bar.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18"/><circle cx="16.5" cy="6" r=".6"/></svg></span>
+            <h3>Menu bar only</h3>
+            <p>No Dock icon and no window to manage. Launch at login is off until you turn it on.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg></span>
+            <h3>Idle means idle</h3>
+            <p>No timers and no polling. Measured idle at 0.0% CPU and about 18 MB of memory.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></svg></span>
+            <h3>Nothing kept</h3>
+            <p>No scan history. Apart from your settings, nothing is stored after you quit.</p>
+          </li>
+          <li class="reveal">
+            <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="2"/><path d="M10 4V3h4v1M10 10h4M10 14h4"/></svg></span>
+            <h3>Copy the results</h3>
+            <p>Copy the scan as a plain-text report or as JSON, to paste into an issue or a chat.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ── knows your stack ─────────────────────────────────── -->
+    <section class="stack" aria-labelledby="stack-title">
+      <div class="wrap">
+        <div class="head center reveal">
+          <p class="eyebrow">Knows your stack</p>
+          <h2 id="stack-title" class="h-lg">Dev servers, agents <em>and the rest.</em></h2>
+          <p class="lede">HeatLens names the tool behind each process tree, so a scan reads like your day, not like a process table.</p>
+        </div>
+        <p class="pills-label">Dev servers, builds and test runners</p>
+        <ul class="pills reveal">
+          <li>Next.js</li><li>Vite</li><li>Astro</li><li>Webpack</li><li>Turbo</li><li>Vitest</li><li>Jest</li><li>tsc --watch</li><li>Node</li><li>Bun</li><li>npm</li><li>pnpm</li><li>yarn</li>
+        </ul>
+        <p class="pills-label">Agents and the apps around them</p>
+        <ul class="pills reveal">
+          <li>Claude Code</li><li>Codex</li><li>OpenCode</li><li>Superset</li><li>Docker</li>
+        </ul>
+        <p class="pills-note">Anything else is grouped by its parent tree. When HeatLens can't place a process, it says Unknown project rather than guessing.</p>
+      </div>
+    </section>
+
+    <!-- ── safety ───────────────────────────────────────────── -->
+    <section class="section" id="safety" aria-labelledby="safety-title">
+      <div class="wrap">
+        <div class="head reveal">
+          <p class="eyebrow">Safe by construction</p>
+          <h2 id="safety-title" class="h-lg">It reads. <em>You decide.</em></h2>
+          <p class="lede">The one thing HeatLens can change on your Mac is to send a single, polite stop signal to a process you own, and only after you have read the confirmation and clicked.</p>
+        </div>
+        <div class="safety">
+          <figure class="art art-tall t-ember reveal" role="img" aria-label="The stop confirmation sheet. Title: Send SIGTERM? PID 12874. Command: node worker.js in the demo-site project. Impact: 0.0% CPU in this sample, stopping it is unlikely to cool your Mac. Warning: stopping a dev server or agent can interrupt tests, edits, builds or active sessions. Buttons: Cancel, which is the default, and Send SIGTERM.">
+            <div class="popover sheet" aria-hidden="true">
+              <div class="pv-headline">Send SIGTERM?</div>
+              <dl class="pv-grid tight">
+                <dt>PID</dt><dd>12874</dd>
+                <dt>Command</dt><dd>/usr/local/bin/node ~/Projects/demo-site/scripts/worker.js</dd>
+                <dt>Project</dt><dd>~/Projects/demo-site</dd>
+                <dt>Impact</dt><dd>0.0% CPU in this sample — stopping it is unlikely to cool your Mac.</dd>
+              </dl>
+              <div class="pv-caption strong">Stopping a dev server or agent can interrupt tests, edits, builds or active sessions.</div>
+              <div class="pv-row snug"><span class="pv-btn regular prominent">Cancel</span><span class="pv-btn regular destructive">Send SIGTERM</span></div>
+            </div>
+            <figcaption>Cancel is the default. If the process ignores the signal, HeatLens says so and leaves it alone.</figcaption>
+          </figure>
+          <ul class="facts">
+            <li class="reveal">
+              <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3l18 18M8.5 8.6A6 6 0 0 0 6 13M12 7a8 8 0 0 1 8 6M4 13a8 8 0 0 1 2.3-5.6M10 16.5a2.5 2.5 0 0 1 4 0"/></svg></span>
+              <div><h3>Fully offline</h3><p>No network access except an update check when you click it. No account, no telemetry, no analytics, no crash reports.</p></div>
+            </li>
+            <li class="reveal">
+              <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></svg></span>
+              <div><h3>Read-only diagnosis</h3><p>It reads the process table and counters macOS exposes to any app. It never opens your files, shell history, environment or agent transcripts, and asks for no permissions.</p></div>
+            </li>
+            <li class="reveal">
+              <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v6c0 4.5-3.2 7.8-7.5 9-4.3-1.2-7.5-4.5-7.5-9V6z"/><path d="M9 12.2l2 2 4-4.2"/></svg></span>
+              <div><h3>A stop is one SIGTERM, confirmed</h3><p>Sent to one PID, after re-checking it is still the same process. No force-quit, no bulk kill, and HeatLens tells you what happened.</p></div>
+            </li>
+            <li class="reveal">
+              <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
+              <div><h3>Protected processes get no stop control</h3><p>HeatLens only ever offers to stop processes you own. These never get the button:</p>
+                <ul class="pills pills-sm">
+                  <li>kernel_task</li><li>WindowServer</li><li>launchd</li><li>loginwindow</li><li>Finder</li><li>Dock</li><li>Spotlight</li><li>root-owned</li><li>other users'</li><li>Apple system binaries</li>
+                </ul>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── free ─────────────────────────────────────────────── -->
+    <section class="section free" id="free" aria-labelledby="free-title">
+      <div class="wrap">
+        <div class="head center reveal">
+          <p class="eyebrow">Price</p>
+          <h2 id="free-title" class="h-lg">No price tag.<br><em>No strings.</em></h2>
+        </div>
+        <div class="price reveal">
+          <div class="price-main">
+            <div class="price-top"><span class="price-name">HeatLens</span><span class="price-tag">Open source</span></div>
+            <p class="price-desc">Everything on this page, on your Mac.</p>
+            <p class="price-amount"><span class="cur">$</span>0</p>
+            <p class="price-terms">MIT license · signed and notarized</p>
+            <a class="btn btn-primary btn-block" href="https://github.com/gorock007/heatlens/releases/latest/download/HeatLens.dmg">
+              <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.28a.75.75 0 0 1-1.06 0L4.19 7.75a.75.75 0 0 1 1.06-1.06l2 2V2.25A.75.75 0 0 1 8 1.5zM2.75 11a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-2.25a.75.75 0 0 1 .75-.75z"/></svg>
+              Download HeatLens.dmg
+            </a>
+            <p class="price-links"><a href="https://github.com/gorock007/heatlens">View source ↗</a><a href="https://github.com/gorock007/heatlens/releases/latest">Release notes ↗</a></p>
+          </div>
+          <div class="price-side">
+            <h3>The whole app. Nothing held back.</h3>
+            <ul>
+              <li>Every feature on this page</li>
+              <li>The read-only MCP server and command-line tool</li>
+              <li>No account, telemetry or analytics</li>
+              <li>Updates checked only when you click</li>
+              <li>Build it yourself from the source if you prefer</li>
+            </ul>
           </div>
         </div>
+        <figure class="quote reveal">
+          <blockquote><p>“Being busy does not mean it is the cause of heat.”</p></blockquote>
+          <figcaption>A caption HeatLens shows on its findings</figcaption>
+        </figure>
       </div>
     </section>
 
-    <section class="section" id="limits" aria-labelledby="limits-title">
+    <!-- ── limits ───────────────────────────────────────────── -->
+    <section class="section limits-section" id="limits" aria-labelledby="limits-title">
       <div class="wrap">
-        <div class="section-head">
-          <h2 id="limits-title">What it can't tell you</h2>
-          <p>These are limits of what macOS exposes without special privileges. HeatLens shows Not accessible or Unavailable in those places instead of estimating.</p>
+        <div class="head center reveal">
+          <h2 id="limits-title" class="h-md">What it <em>can't</em> tell you.</h2>
+          <p class="lede">These are limits of what macOS exposes without special privileges. HeatLens shows Not accessible or Unavailable in those places instead of estimating.</p>
         </div>
         <ul class="limits">
-          <li><strong>No temperature</strong><p>No supported API provides a reliable per-chip temperature. The thermal state is the OS's coarse state, not a measurement of how hot the Mac is.</p></li>
-          <li><strong>No GPU percentage</strong><p>WindowServer CPU is shown as UI and rendering activity. It is a signal, not a GPU figure and not proof of overheating.</p></li>
-          <li><strong>Other users' processes</strong><p>Only your own processes give full details. For root and other-user processes the command line, working directory, memory footprint and precise CPU are not available; CPU comes from ps at 10 ms resolution.</p></li>
-          <li><strong>kernel_task has no numbers</strong><p>It reports no CPU or memory figures to HeatLens, only its name and owner. Its load counts only in the host total.</p></li>
-          <li><strong>Flags are not proof</strong><p>"Possible leftover" means review candidate. A process with parent PID 1 that has run for two days may be an intentional daemon doing useful work, and HeatLens says so on the card.</p></li>
+          <li class="reveal"><h3>No temperature</h3><p>No supported API gives a reliable chip temperature. The thermal state is the OS's coarse state, not a measurement.</p></li>
+          <li class="reveal"><h3>No GPU percentage</h3><p>WindowServer CPU is shown as UI and rendering activity: a signal, not a GPU figure.</p></li>
+          <li class="reveal"><h3>Other users' processes</h3><p>Root and other-user processes have no command line, working directory or precise CPU; CPU comes from ps at 10 ms resolution.</p></li>
+          <li class="reveal"><h3>kernel_task has no numbers</h3><p>It reports only its name and owner. Its load counts only in the host total.</p></li>
+          <li class="reveal"><h3>Flags are not proof</h3><p>"Possible leftover" means review candidate. A two-day-old process with parent PID 1 may be a daemon doing useful work.</p></li>
+          <li class="reveal"><a href="https://github.com/gorock007/heatlens/blob/main/docs/LIMITATIONS.md"><h3>The full list ↗</h3><p>Every limit, with the reasons, in docs/LIMITATIONS.md.</p></a></li>
         </ul>
-        <p class="limits-note">The full list, with the reasons, is in <a href="https://github.com/gorock007/heatlens/blob/main/docs/LIMITATIONS.md">docs/LIMITATIONS.md</a>.</p>
       </div>
     </section>
 
-    <section class="section" id="faq" aria-labelledby="faq-title">
+    <!-- ── faq ──────────────────────────────────────────────── -->
+    <section class="section faq-section" id="faq" aria-labelledby="faq-title">
       <div class="wrap">
-        <h2 id="faq-title">Questions</h2>
+        <div class="head reveal">
+          <p class="eyebrow">Questions</p>
+          <h2 id="faq-title" class="h-lg">A few things you might <em>be wondering.</em></h2>
+        </div>
         <div class="faq">
           <details>
             <summary>Will macOS let me open it?</summary>
@@ -392,34 +630,33 @@
       </div>
     </section>
 
-    <section class="download" aria-labelledby="download-title">
+    <!-- ── closer ───────────────────────────────────────────── -->
+    <section class="closer" aria-labelledby="closer-title">
       <div class="wrap">
-        <img class="download-icon" src="icon-128.png" width="96" height="96" alt="">
-      </div>
-      <div class="wrap inner">
-        <div>
-          <h2 id="download-title">Free, open source, no strings</h2>
-          <p>One disk image. Drag it to Applications and click the thermometer.</p>
-        </div>
-        <div>
-          <a class="button" href="https://github.com/gorock007/heatlens/releases/latest/download/HeatLens.dmg">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.28a.75.75 0 0 1-1.06 0L4.19 7.75a.75.75 0 0 1 1.06-1.06l2 2V2.25A.75.75 0 0 1 8 1.5zM2.75 11a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-2.25a.75.75 0 0 1 .75-.75z"/></svg>
-            Download HeatLens.dmg
+        <h2 id="closer-title" class="closer-line">Click once. Know why.</h2>
+        <p class="closer-sub">One disk image. Drag it to Applications<br>and click the thermometer.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="https://github.com/gorock007/heatlens/releases/latest/download/HeatLens.dmg">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.28a.75.75 0 0 1-1.06 0L4.19 7.75a.75.75 0 0 1 1.06-1.06l2 2V2.25A.75.75 0 0 1 8 1.5zM2.75 11a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-2.25a.75.75 0 0 1 .75-.75z"/></svg>
+            Download for Mac
           </a>
-          <p class="cta-meta">macOS 14 or later · Apple Silicon</p>
+          <a class="btn btn-ghost" href="https://github.com/gorock007/heatlens">View on GitHub</a>
         </div>
+        <p class="closer-meta">macOS 14 or later · Apple Silicon · free</p>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="wrap inner">
-      <p>HeatLens is a native Swift app. This page sets no cookies and runs no scripts.</p>
+    <div class="wrap footer-inner">
+      <a class="footer-brand" href="#top">HeatLens</a>
       <ul>
-        <li><a href="https://github.com/gorock007/heatlens">Source on GitHub</a></li>
+        <li><a href="https://github.com/gorock007/heatlens">Source</a></li>
         <li><a href="https://github.com/gorock007/heatlens/releases/latest">Releases</a></li>
+        <li><a href="https://github.com/gorock007/heatlens/blob/main/docs/LIMITATIONS.md">Limitations</a></li>
         <li><a href="https://github.com/gorock007/heatlens/issues">Report a problem</a></li>
       </ul>
+      <p>A native Swift app, MIT licensed. This page sets no cookies; its one script runs the menu-bar clock.</p>
     </div>
   </footer>
 </body>

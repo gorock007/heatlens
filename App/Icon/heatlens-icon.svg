@@ -1,18 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
 <defs>
-<linearGradient id="body" x1="0" y1="0" x2=".25" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#dddde3"/></linearGradient>
-<linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#eeedf0"/></linearGradient>
-<linearGradient id="mercury" gradientUnits="userSpaceOnUse" x1="465" y1="390" x2="550" y2="718"><stop stop-color="#ff795c"/><stop offset=".5" stop-color="#e94f34"/><stop offset="1" stop-color="#c63124"/></linearGradient>
-<linearGradient id="lens" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3a84e3"/><stop offset="1" stop-color="#074dba"/></linearGradient>
-<filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000000" flood-opacity=".24"/></filter>
-<filter id="raised" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000000" flood-opacity=".14"/></filter>
+<linearGradient id="body" x1="0" y1="0" x2=".2" y2="1"><stop stop-color="#26252b"/><stop offset="1" stop-color="#17171a"/></linearGradient>
+<radialGradient id="glow" gradientUnits="userSpaceOnUse" cx="596" cy="572" r="300"><stop stop-color="#ea4b41" stop-opacity=".16"/><stop offset="1" stop-color="#ea4b41" stop-opacity="0"/></radialGradient>
+<filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000000" flood-opacity=".3"/></filter>
 </defs>
 <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#body)" filter="url(#shadow)"/>
-<rect x="102" y="102" width="820" height="820" rx="182" fill="none" stroke="#ffffff" stroke-width="4" opacity=".7"/>
-<rect x="108" y="108" width="808" height="808" rx="177" fill="none" stroke="#9898a0" stroke-width="2" opacity=".12"/>
-<g filter="url(#raised)"><path d="M442 550 V305 A70 70 0 0 1 582 305 V550 A122 122 0 1 1 442 550 Z" fill="url(#glass)" stroke="#1b1b1f" stroke-width="32" stroke-linejoin="round"/>
-<path d="M512 394 V626" fill="none" stroke="url(#mercury)" stroke-width="40" stroke-linecap="round"/>
-<circle cx="512" cy="650" r="68" fill="url(#mercury)"/>
-<ellipse cx="492" cy="624" rx="23" ry="13" fill="#ffffff" opacity=".22"/>
-<path d="M608 348 H653 M608 414 H638 M608 480 H653" fill="none" stroke="#1b1b1f" stroke-width="23" stroke-linecap="round" opacity=".65"/></g>
+<rect x="100" y="100" width="824" height="824" rx="184" fill="url(#glow)"/>
+<rect x="102" y="102" width="820" height="820" rx="182" fill="none" stroke="#3a3940" stroke-width="4"/>
+<g fill="none" stroke-width="28">
+<circle cx="512" cy="512" r="310" stroke="#3b3a42"/>
+<circle cx="533" cy="527" r="245" stroke="#6b6a74"/>
+<circle cx="554" cy="542" r="180" stroke="#e1b539"/>
+<circle cx="575" cy="557" r="119" stroke="#f77643"/>
+</g>
+<circle cx="596" cy="572" r="53" fill="#ea4b41"/>
 </svg>
