@@ -275,7 +275,7 @@
             <li>
               <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 16 0M4 12v5h3v-5zm13 0v5h3v-5z"/><path d="M12 4v2"/></svg>
               <strong>Fully offline</strong>
-              <p>No network access, no account, no telemetry, no analytics, no crash reports. The only thing stored is your settings, and no scan history is kept.</p>
+              <p>No network access except a check for updates when you click it, no account, no telemetry, no analytics, no crash reports. The only thing stored is your settings, and no scan history is kept.</p>
             </li>
             <li>
               <svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></svg>
@@ -359,7 +359,7 @@
           <details>
             <summary>Does connecting an AI agent send my data anywhere?</summary>
             <div class="answer">
-              <p>HeatLens itself still makes no network connections; the MCP server runs on your Mac over standard input and output. But whatever the agent receives, it sends to its own model provider, as with anything else you show it. That's why the reports it gets are redacted: personal paths are replaced, and specific network addresses are left out. You choose whether to connect one, and you can remove it with <code>claude mcp remove heatlens</code>.</p>
+              <p>HeatLens itself makes no network connections apart from the update check you click; the MCP server runs on your Mac over standard input and output. But whatever the agent receives, it sends to its own model provider, as with anything else you show it. That's why the reports it gets are redacted: personal paths are replaced, and specific network addresses are left out. You choose whether to connect one, and you can remove it with <code>claude mcp remove heatlens</code>.</p>
             </div>
           </details>
           <details>

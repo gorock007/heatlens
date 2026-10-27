@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     let settings: SettingsModel
     let onDone: () -> Void
+    @State private var updates = UpdateChecker()
 
     var body: some View {
         @Bindable var settings = settings
@@ -62,6 +63,8 @@ struct SettingsView: View {
 
                 AgentConnectSection(bundleURL: Bundle.main.bundleURL)
 
+                UpdateSection(checker: updates)
+
                 Text("Settings are stored on this Mac. HeatLens keeps no scan history.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -114,6 +117,52 @@ private struct ThermalAlertSection: View {
         let id = Bundle.main.bundleIdentifier ?? "dev.heatlens.HeatLens"
         guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") else { return }
         NSWorkspace.shared.open(url)
+    }
+}
+
+/// The click-only update check: one request to GitHub per click, never in the background.
+private struct UpdateSection: View {
+    let checker: UpdateChecker
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("HeatLens \(checker.currentVersion)")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button(checker.state == .checking ? "Checking…" : "Check for updates…") {
+                    Task { await checker.check() }
+                }
+                .disabled(checker.state == .checking)
+            }
+            Text("Contacts GitHub only when you click.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            switch checker.state {
+            case .idle, .checking:
+                EmptyView()
+            case .upToDate:
+                Text("You're up to date.")
+                    .font(.caption)
+            case .available(let version, let url):
+                HStack {
+                    Text("HeatLens \(version) is available.")
+                        .font(.caption)
+                    Spacer()
+                    Button("Download") { NSWorkspace.shared.open(url) }
+                        .controlSize(.small)
+                }
+            case .failed(let message):
+                HStack {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Releases page") { NSWorkspace.shared.open(UpdateChecker.releasesPage) }
+                        .controlSize(.small)
+                }
+            }
+        }
     }
 }
 

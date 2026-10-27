@@ -84,7 +84,7 @@ swift run heatlens-probe
 
 ## Privacy
 
-- Fully local: no account, API key, or network access.
+- Fully local: no account or API key. The only network request is the update check, and only when you click Check for updates.
 - No telemetry or analytics.
 - No file contents are read.
 - Nothing is stored except user settings.
