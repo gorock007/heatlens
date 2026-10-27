@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a signed, notarized, stapled dist/HeatLens-<version>.dmg.
+# Build a signed, notarized, stapled dist/HeatLens-<version>.dmg holding a notarized, stapled app.
 # Usage: scripts/release.sh [--identity <name|->] [--skip-notarize] [--notary-profile <name>]
 #   --identity        codesign identity (default "Developer ID Application"; "-" signs ad-hoc)
 #   --skip-notarize   skip notarytool submit and stapling
@@ -30,6 +30,28 @@ done
 cd "$(dirname "$0")/.."
 
 step() { echo "==> $*"; }
+
+# notarize <file>: submit to the notary service and wait; on rejection print the
+# submission output and its log, then exit.
+notarize() {
+  local file=$1 out rc=0 submission status
+  out=$(mktemp -t heatlens-notary)
+  xcrun notarytool submit "$file" --keychain-profile "$profile" --wait \
+    --output-format plist >"$out" || rc=$?
+  submission=$(/usr/libexec/PlistBuddy -c "Print :id" "$out" 2>/dev/null || true)
+  status=$(/usr/libexec/PlistBuddy -c "Print :status" "$out" 2>/dev/null || true)
+  echo "submission ${submission:-?}: ${status:-?}"
+  if [[ $rc -ne 0 || "$status" != "Accepted" ]]; then
+    cat "$out" >&2
+    rm -f "$out"
+    if [[ -n "$submission" ]]; then
+      xcrun notarytool log "$submission" --keychain-profile "$profile" >&2 || true
+    fi
+    echo "notarization of $file failed" >&2
+    exit 1
+  fi
+  rm -f "$out"
+}
 
 sign_args=(--force --options runtime --sign "$identity")
 if [[ "$identity" != "-" ]]; then
@@ -75,14 +97,43 @@ done
 codesign "${sign_args[@]}" "$app"
 codesign --verify --strict --verbose=2 "$app"
 
+if [[ $notarize -eq 1 ]]; then
+  step "Notarizing app (profile $profile)"
+  zip="dist/stage/HeatLens.zip"
+  rm -f "$zip"
+  ditto -c -k --keepParent "$app" "$zip"
+  notarize "$zip"
+  rm -f "$zip"
+  step "Stapling app"
+  xcrun stapler staple "$app"
+  xcrun stapler validate "$app"
+fi
+
 dmg="dist/HeatLens-$version.dmg"
 step "Building $dmg"
 dmgroot="dist/stage/dmg"
 mkdir -p "$dmgroot"
 ditto "$app" "$dmgroot/HeatLens.app"
 ln -s /Applications "$dmgroot/Applications"
+icon="$app/Contents/Resources/AppIcon.icns"
 rm -f "$dmg"
-hdiutil create -quiet -volname "HeatLens $version" -srcfolder "$dmgroot" -ov -format UDZO "$dmg"
+if [[ -f "$icon" ]]; then
+  # hdiutil -srcfolder drops the custom-icon flag on the volume root, so set it on
+  # a mounted read-write image and compress that.
+  cp "$icon" "$dmgroot/.VolumeIcon.icns"
+  rwdmg="dist/stage/HeatLens-rw.dmg"
+  mnt="dist/stage/mnt"
+  hdiutil create -quiet -volname "HeatLens $version" -srcfolder "$dmgroot" -ov -format UDRW "$rwdmg"
+  mkdir -p "$mnt"
+  hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$mnt" "$rwdmg"
+  xcrun SetFile -a C "$mnt" || { hdiutil detach -quiet "$mnt"; exit 1; }
+  hdiutil detach -quiet "$mnt"
+  hdiutil convert -quiet "$rwdmg" -format UDZO -o "$dmg"
+  rm -rf "$rwdmg" "$mnt"
+else
+  echo "note: no $icon, DMG gets the default volume icon"
+  hdiutil create -quiet -volname "HeatLens $version" -srcfolder "$dmgroot" -ov -format UDZO "$dmg"
+fi
 rm -rf "$dmgroot"
 
 step "Signing DMG"
@@ -94,24 +145,9 @@ codesign "${dmg_sign_args[@]}" "$dmg"
 codesign --verify --verbose=2 "$dmg"
 
 if [[ $notarize -eq 1 ]]; then
-  step "Notarizing (profile $profile)"
-  submit_out=$(mktemp -t heatlens-notary)
-  trap 'rm -f "$log" "$submit_out"' EXIT
-  rc=0
-  xcrun notarytool submit "$dmg" --keychain-profile "$profile" --wait \
-    --output-format plist >"$submit_out" || rc=$?
-  submission=$(/usr/libexec/PlistBuddy -c "Print :id" "$submit_out" 2>/dev/null || true)
-  status=$(/usr/libexec/PlistBuddy -c "Print :status" "$submit_out" 2>/dev/null || true)
-  echo "submission ${submission:-?}: ${status:-?}"
-  if [[ $rc -ne 0 || "$status" != "Accepted" ]]; then
-    cat "$submit_out" >&2
-    if [[ -n "$submission" ]]; then
-      xcrun notarytool log "$submission" --keychain-profile "$profile" >&2 || true
-    fi
-    echo "notarization failed" >&2
-    exit 1
-  fi
-  step "Stapling"
+  step "Notarizing DMG (profile $profile)"
+  notarize "$dmg"
+  step "Stapling DMG"
   xcrun stapler staple "$dmg"
 else
   step "Skipping notarization"
@@ -123,6 +159,14 @@ if ! spctl -a -t open --context context:primary-signature -vv "$dmg"; then
     echo "warning: spctl rejected the ad-hoc signed DMG (expected)" >&2
   else
     echo "spctl rejected $dmg" >&2
+    exit 1
+  fi
+fi
+if ! spctl -a -t exec -vv "$app"; then
+  if [[ "$identity" == "-" ]]; then
+    echo "warning: spctl rejected the ad-hoc signed app (expected)" >&2
+  else
+    echo "spctl rejected $app" >&2
     exit 1
   fi
 fi

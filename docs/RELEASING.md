@@ -25,6 +25,7 @@ scripts/release.sh
 This builds Release, signs the app with the hardened runtime, builds and signs
 `dist/HeatLens-<version>.dmg`, notarizes and staples it, runs a Gatekeeper check, and writes
 `dist/HeatLens.dmg` (the stable name the site links to) and `dist/SHA256SUMS`.
+It makes two notary submissions, the zipped app (stapled before it goes in the DMG) and then the DMG, and uses the app's `AppIcon.icns` as the DMG volume icon when it has one.
 
 Options: `--identity <name|->` (default `Developer ID Application`; `-` signs ad-hoc),
 `--skip-notarize`, `--notary-profile <name>` (default `heatlens-notary`). A dry run with no
