@@ -89,10 +89,14 @@ swift run heatlens-probe
 - No file contents are read.
 - Nothing is stored except user settings.
 - Reports redact home paths and process arguments by default.
+- Optional thermal alert, off by default: when macOS reports serious heat, HeatLens runs one scan
+  and posts one notification naming the top culprit, at most every 30 minutes. Nothing runs in between.
 
 ## Status
 
 Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; signed and notarized from v1.0.0.
+When one project has several leftovers, one confirmation lists them all with checkboxes and stops
+the selected ones in turn, re-checking each process right before its SIGTERM.
 
 ## Documentation
 

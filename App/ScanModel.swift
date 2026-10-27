@@ -23,6 +23,8 @@ final class ScanModel {
     private var task: Task<Void, Never>?
     /// Bumped per scan so progress or results from a cancelled scan are dropped.
     private var generation = 0
+    /// Told once how the current scan ended: its report, or nil when it failed or was cancelled.
+    private var onFinish: (@MainActor (ScanReport?) -> Void)?
 
     init(service: any ScanService, settings: SettingsModel = SettingsModel()) {
         self.service = service
@@ -31,8 +33,9 @@ final class ScanModel {
 
     var isScanning: Bool { task != nil }
 
-    func startScan(duration: TimeInterval? = nil) {
+    func startScan(duration: TimeInterval? = nil, onFinish: (@MainActor (ScanReport?) -> Void)? = nil) {
         guard task == nil else { return }
+        self.onFinish = onFinish
         let duration = duration ?? settings.sampleDuration
         generation += 1
         let current = generation
@@ -62,6 +65,7 @@ final class ScanModel {
         self.task = nil
         generation += 1
         state = .idle(lastScan: lastScan)
+        reportFinish(nil)
     }
 
     /// Leaves results or an error and shows the idle view again.
@@ -91,5 +95,12 @@ final class ScanModel {
         task = nil
         if case .results = newState { lastScan = Date() }
         state = newState
+        if case .results(let report) = newState { reportFinish(report) } else { reportFinish(nil) }
+    }
+
+    private func reportFinish(_ report: ScanReport?) {
+        let handler = onFinish
+        onFinish = nil
+        handler?(report)
     }
 }

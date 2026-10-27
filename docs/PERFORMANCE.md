@@ -29,6 +29,10 @@ top -l 1 -pid <pid> -stats pid,cpu,mem,idlew
    only work is a scan the user starts.
 4. The app was stopped afterwards with `kill -TERM <pid>` (the process this session had
    launched), and `pgrep -fl "HeatLens.app/Contents/MacOS"` then printed nothing.
+5. **Thermal alert** (opt-in, off by default; 2026-10-27): idle cost doesn't change. While the
+   setting is on, the app holds one `ProcessInfo.thermalStateDidChangeNotification` observer and
+   no timer. Work happens only when macOS reports a rise into serious or critical: one normal
+   scan (section 2), at most every 30 minutes. With the setting off there is no observer at all.
 
 ## 2. Scan cost
 

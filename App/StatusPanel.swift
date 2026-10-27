@@ -24,6 +24,11 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Opens the panel under the icon, as a click on it would.
+    func show() {
+        open()
+    }
+
     @objc private func toggle() {
         if panel.isVisible { close() } else { open() }
     }

@@ -49,6 +49,8 @@ struct SettingsView: View {
                     }
                 }
 
+                ThermalAlertSection(settings: settings)
+
                 AgentConnectSection(bundleURL: Bundle.main.bundleURL)
 
                 Text("Settings are stored on this Mac. HeatLens keeps no scan history.")
@@ -65,6 +67,44 @@ struct SettingsView: View {
                 .keyboardShortcut(.defaultAction)
         }
         .onAppear { settings.refreshLaunchAtLoginStatus() }
+    }
+}
+
+/// The opt-in thermal alert. Turning it on asks for notification permission; if that's been
+/// refused, points at System Settings, the only place it can be turned back on.
+private struct ThermalAlertSection: View {
+    let settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Alert me when my Mac runs hot", isOn: Binding(
+                get: { settings.thermalAlertsEnabled },
+                set: { settings.setThermalAlerts($0) }
+            ))
+            Text("Runs one scan when macOS reports serious thermal pressure, at most every 30 minutes. Nothing runs in between.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if settings.thermalAlertsEnabled, settings.notificationsDenied {
+                HStack {
+                    Text("Notifications are off for HeatLens")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Open System Settings") { Self.openNotificationSettings() }
+                        .controlSize(.small)
+                }
+            }
+        }
+        .task(id: settings.thermalAlertsEnabled) {
+            if settings.thermalAlertsEnabled { await settings.refreshNotificationStatus() }
+        }
+    }
+
+    private static func openNotificationSettings() {
+        let id = Bundle.main.bundleIdentifier ?? "dev.heatlens.HeatLens"
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

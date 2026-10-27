@@ -18,12 +18,18 @@ struct HeatLensApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusPanel: StatusPanelController?
+    private var thermalAlerts: ThermalAlertService?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // One model for the app's lifetime, so a running scan and the last result survive a close.
         let model = ScanModel(service: PipelineScanService(), settings: SettingsModel())
-        statusPanel = StatusPanelController {
+        let statusPanel = StatusPanelController {
             PopoverView(model: model, stopService: TerminatorStopService())
         }
+        self.statusPanel = statusPanel
+        thermalAlerts = ThermalAlertService(model: model) { statusPanel.show() }
+        #if DEBUG
+        thermalAlerts?.simulateFromLaunchArguments()
+        #endif
     }
 }
