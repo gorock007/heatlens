@@ -7,7 +7,7 @@ stops, this file must hold everything a fresh session needs: `jarvis watch`
 may `/clear` Jarvis after a long idle.
 
 Jarvis session: cf788b09-038c-480c-b260-e01e536edeef
-Usage band: amber (5h 53% used, 13:28)
+Usage band: amber (5h 58% used, 13:45)
 
 ## Questions for the user
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
@@ -21,7 +21,7 @@ Usage band: amber (5h 53% used, 13:28)
 <!-- - handoff to review: handoffs/<file>.md · migration to apply · release to cut -->
 
 ## To-do
-- 7a CLI/MCP (0d9ec2b) and 8a ports (aaef6bf) MERGED. 7b running (bundle CLI, Settings connect, ports tool, includeJSON). After 7b: Jarvis bumps to 1.1.0 (heatlensVersion in Sources/HeatLensCLI/Arguments.swift + MARKETING_VERSION/CURRENT_PROJECT_VERSION in project.yml), real-identity release.sh + notarize, gh release, site feature lines.
+- 7a (0d9ec2b), 8a ports (aaef6bf), 7b bundle/connect (f7424e8) MERGED. CLI ships at HeatLens.app/Contents/Helpers/heatlens (MacOS/heatlens collides with HeatLens on case-insensitive APFS). 7c running (cap text report). After 7c: Jarvis bumps to 1.1.0 (heatlensVersion in Sources/HeatLensCLI/Arguments.swift + MARKETING_VERSION/CURRENT_PROJECT_VERSION in project.yml), real-identity release.sh + notarize (first build with nested helper: check notarytool log if rejected), gh release, site feature lines.
 - Feature backlog (user-approved list, not yet picked): sleep blockers, thermal alert (event-driven), agent awareness, before/after, global hotkey, stop project leftovers. AI ruling: explain + propose typed actions only; no free-form command execution; CLI/MCP read-only.
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
 - Phase 2 safety DONE: 2a/2b/2c/2d merged (d009384); review findings all fixed (#5: scripts/with-timeout.sh). Ruling: exclusion also suppresses stop. 2e docs merged (d7cd4bf): PERFORMANCE.md, SCENARIOS.md, samples/. PRD §11 definition of done met in code; scenarios 8 & 9 are manual-only (need the click-through).

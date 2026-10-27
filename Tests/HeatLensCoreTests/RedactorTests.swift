@@ -91,6 +91,52 @@ struct RedactorTests {
         #expect((object["processes"] as? [Any])?.count == 32)
     }
 
+    @Test("Text lists at most 5 of a finding's processes, busiest first, and cuts long argv; JSON keeps everything")
+    func findingProcessCap() throws {
+        let home = SyntheticSnapshots.home
+        let longPath = "/opt" + String(repeating: "/abc", count: 99)   // 400 characters
+        let busy = (1...20).map { (index: Int) -> ProcessSample in
+            let executable: String = index == 20 ? longPath : "/bin/busy"
+            return SyntheticSnapshots.process(pid: Int32(4_000 + index), name: "busy\(index)",
+                                              arguments: [executable], cpu: Double(50 + index))
+        }
+        let swarm = (1...20).map { (index: Int) -> ProcessSample in
+            SyntheticSnapshots.process(pid: Int32(5_000 + index), name: "swarm\(index)", cpu: Double(index) / 10)
+        }
+        let unmeasured = SyntheticSnapshots.process(pid: 5_100, name: "swarm-unmeasured", cpu: nil)
+        let few = SyntheticSnapshots.process(pid: 5_200, name: "few", cpu: 0)
+        let snapshot = SyntheticSnapshots.snapshot(busy + swarm + [unmeasured, few])
+        let big = DiagnosticFinding(title: "Many processes", severity: .review, confidence: .medium,
+                                    explanation: "Swarm", evidence: [], limitations: [],
+                                    affectedProcesses: (swarm + [unmeasured]).map(\.identity), recommendedActions: [])
+        let small = DiagnosticFinding(title: "One process", severity: .review, confidence: .medium,
+                                      explanation: "Few", evidence: [], limitations: [],
+                                      affectedProcesses: [few.identity], recommendedActions: [])
+        let groups = ProvenanceResolver.resolve(snapshot)
+
+        let text = Redactor.textReport(snapshot, groups: groups, findings: [big, small], homeDirectory: home)
+        let processLines = text.split(separator: "\n").filter { $0.hasPrefix("- PID ") }
+        #expect(processLines.count == 21)   // top 15 by CPU, 5 of the swarm, and `few`
+        for index in 16...20 { #expect(text.contains("PID \(5_000 + index) swarm\(index);")) }
+        for index in 1...15 { #expect(!text.contains("PID \(5_000 + index) swarm\(index);")) }
+        #expect(!text.contains("swarm-unmeasured"))
+        #expect(text.contains("PID 5200 few"))
+        #expect(text.contains("  Processes: 5 of 21 listed; Copy JSON for the full list"))
+        #expect(text.components(separatedBy: "  Processes: ").count == 2)   // not under the small finding
+        #expect(text.contains("21 other processes omitted; Copy JSON for the full list"))
+
+        let longLine = try #require(processLines.first { $0.contains("PID 4020 ") })
+        #expect(longLine.hasSuffix("argv " + String(longPath.prefix(300)) + "… (+100 chars)"))
+        #expect(!text.contains(longPath))
+
+        let json = try #require(String(data: try Redactor.jsonReport(snapshot, groups: groups, findings: [big, small],
+                                                                     homeDirectory: home), encoding: .utf8))
+        #expect(json.contains(longPath))
+        #expect(!json.contains("chars)"))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        #expect((object["processes"] as? [Any])?.count == 42)
+    }
+
     @Test("A small scan lists every process and says nothing is omitted")
     func nothingOmitted() {
         let snapshot = SyntheticSnapshots.detachedWorker

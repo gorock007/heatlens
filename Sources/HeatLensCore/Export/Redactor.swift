@@ -4,6 +4,10 @@ public enum Redactor {
     /// How many processes the concise text report lists by CPU (FR-11), on top of every process a
     /// finding names. `jsonReport` always carries everything.
     public static let textProcessLimit = 15
+    /// How many of one finding's processes the text report lists, highest CPU first.
+    public static let textFindingProcessLimit = 5
+    /// Longer argv in the text report is cut to this many characters.
+    public static let textArgvLimit = 300
 
     public static func textReport(
         _ snapshot: ScanSnapshot,
@@ -13,9 +17,12 @@ public enum Redactor {
         processLimit: Int = Redactor.textProcessLimit
     ) -> String {
         let report = makeReport(snapshot, groups: groups, findings: findings, homeDirectory: homeDirectory)
-        // Top N by CPU (unmeasured last), plus everything a finding names, highest CPU first.
-        let named = Set(findings.flatMap(\.affectedProcesses).map(\.pid))
+        // Top N by CPU (unmeasured last), plus the busiest few each finding names, highest CPU first.
         let byCPU = report.processes.sorted { ($0.cpuPercent ?? -1, $1.pid) > ($1.cpuPercent ?? -1, $0.pid) }
+        let named = Set(report.findings.flatMap { finding in
+            let affected = Set(finding.affectedPIDs)
+            return byCPU.filter { affected.contains($0.pid) }.prefix(textFindingProcessLimit).map(\.pid)
+        })
         let top = Set(byCPU.prefix(max(processLimit, 0)).map(\.pid))
         let listed = byCPU.filter { top.contains($0.pid) || named.contains($0.pid) }
         let listedPIDs = Set(listed.map(\.pid))
@@ -44,6 +51,11 @@ public enum Redactor {
             lines.append("- [\(finding.severity)] \(finding.title): \(finding.explanation)")
             lines.append("  Evidence: \(finding.evidence.map { "\($0.label)=\($0.value) (\($0.source))" }.joined(separator: "; "))")
             lines.append("  Limitations: \(finding.limitations.joined(separator: "; "))")
+            let affected = Set(finding.affectedPIDs)
+            let affectedListed = affected.intersection(listedPIDs).count
+            if affected.count > textFindingProcessLimit, affectedListed < affected.count {
+                lines.append("  Processes: \(affectedListed) of \(affected.count) listed; Copy JSON for the full list")
+            }
         }
 
         lines += portLines(report.listeningPorts)
@@ -51,13 +63,19 @@ public enum Redactor {
         lines.append("Processes (top \(processLimit) by CPU, plus any named in a finding):")
         if listed.isEmpty { lines.append("- none") }
         for process in listed {
-            let command = process.arguments?.joined(separator: " ") ?? "Unavailable"
+            let command = process.arguments.map { truncated($0.joined(separator: " "), to: textArgvLimit) } ?? "Unavailable"
             lines.append("- PID \(process.pid) \(process.name); CPU \(process.cpuPercent.map { String(format: "%.1f%%", $0) } ?? "Unavailable"); cwd \(process.currentDirectory ?? "Unavailable"); argv \(command)")
         }
         if listed.count < report.processes.count {
             lines.append("\(report.processes.count - listed.count) other processes omitted; Copy JSON for the full list")
         }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// `text` cut to `limit` characters, with how many were cut.
+    static func truncated(_ text: String, to limit: Int) -> String {
+        guard text.count > limit else { return text }
+        return String(text.prefix(limit)) + "… (+\(text.count - limit) chars)"
     }
 
     /// `heatlens ports`: the "Listening ports" section of `textReport` on its own, for a
