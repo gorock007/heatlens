@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <style>
+    .tube { fill: none; stroke: #1b1b1f; stroke-width: 2.2; }
+    .mercury { fill: #d63f2a; stroke: #d63f2a; }
+    @media (prefers-color-scheme: dark) {
+      .tube { stroke: #f2f2f4; }
+      .mercury { fill: #ff6d55; stroke: #ff6d55; }
+    }
+  </style>
+  <path class="tube" d="M12 5.5a4 4 0 0 1 8 0v12a7 7 0 1 1-8 0z"/>
+  <path class="mercury" d="M16 13.5v8" stroke-width="3.2" stroke-linecap="round"/>
+  <circle class="mercury" cx="16" cy="23.5" r="3.2"/>
+</svg>
