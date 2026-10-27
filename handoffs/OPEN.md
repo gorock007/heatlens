@@ -7,21 +7,23 @@ stops, this file must hold everything a fresh session needs: `jarvis watch`
 may `/clear` Jarvis after a long idle.
 
 Jarvis session: cf788b09-038c-480c-b260-e01e536edeef
-Usage band: amber (5h 37% used, 12:36)
+Usage band: amber (5h 46% used, 13:14)
 
 ## Questions for the user
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
+- 2026-10-27 13:15 · claude/claude-opus-5-5 high · term d0edcb33-26fe-4fc2-8df0-75457f669656 · handoffs/briefs/2026-10-27-1315-p8a-listening-ports.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
 ## Waiting on Jarvis
 - User to verify 6a panel (98e38fd) with a PHYSICAL click on the menu-bar icon: worker only tested via AX press (menu-bar manager hid the icon). Risk: an attached panel's resign-key close racing the icon toggle (closes, then reopens).
-- User to pick next features from the list given 2026-10-27: heatlens CLI/MCP server (Jarvis's pick), ports owner, sleep blockers, thermal alert (event-driven), agent awareness, before/after, global hotkey, stop project leftovers. AI ruling proposed: explain + propose typed actions only, no free-form command execution.
 <!-- - handoff to review: handoffs/<file>.md · migration to apply · release to cut -->
 
 ## To-do
+- Next after 7a+8a merge: 7b brief: bundle `heatlens` into HeatLens.app (project.yml copy phase, release.sh signs nested binary before notarizing), Settings "Connect to an AI agent" button copying `claude mcp add heatlens -- /Applications/HeatLens.app/Contents/MacOS/heatlens mcp`, a fast `heatlens ports` subcommand (no CPU sample), site/README docs. Then release v1.1.0 (Jarvis).
+- Feature backlog (user-approved list, not yet picked): sleep blockers, thermal alert (event-driven), agent awareness, before/after, global hotkey, stop project leftovers. AI ruling: explain + propose typed actions only; no free-form command execution; CLI/MCP read-only.
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
 - Phase 2 safety DONE: 2a/2b/2c/2d merged (d009384); review findings all fixed (#5: scripts/with-timeout.sh). Ruling: exclusion also suppresses stop. 2e docs merged (d7cd4bf): PERFORMANCE.md, SCENARIOS.md, samples/. PRD §11 definition of done met in code; scenarios 8 & 9 are manual-only (need the click-through).
 - Phase 3a click-through DONE (docs/CLICKTHROUGH.md): all 10 steps pass; scenarios 6/8/9/11 verified by hand. Remaining unverified: scenario 7 wording (needs a Mac without thermal info), Activity Monitor comparison (user). Driving trick: cua.getApp times out on LSUIElement apps; a CoreGraphics click on the status icon + System Events works.

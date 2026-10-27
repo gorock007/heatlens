@@ -40,6 +40,25 @@ scripts/run-app.sh --build-only
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift test
 ```
 
+## Use from a terminal or an AI agent
+
+`heatlens` runs the same scan as the app and prints the same redacted report. It is read-only:
+it never stops or changes a process.
+
+```
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+swift build -c release
+.build/release/heatlens scan                 # 5-second scan, text report
+.build/release/heatlens scan --seconds 10 --json > scan.json
+```
+
+To let Claude Code (or any MCP client) run a scan, register the stdio MCP server. It has one
+read-only tool, `scan`:
+
+```
+claude mcp add heatlens -- "$PWD/.build/release/heatlens" mcp
+```
+
 ## Developer CLI
 
 ```

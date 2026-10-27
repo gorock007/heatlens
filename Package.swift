@@ -9,10 +9,14 @@ let package = Package(
     products: [
         .library(name: "HeatLensCore", targets: ["HeatLensCore"]),
         .executable(name: "heatlens-probe", targets: ["heatlens-probe"]),
+        .executable(name: "heatlens", targets: ["heatlens"]),
     ],
     targets: [
         .target(name: "HeatLensCore"),
         .executableTarget(name: "heatlens-probe", dependencies: ["HeatLensCore"]),
         .testTarget(name: "HeatLensCoreTests", dependencies: ["HeatLensCore"]),
+        .target(name: "HeatLensCLI", dependencies: ["HeatLensCore"]),
+        .executableTarget(name: "heatlens", dependencies: ["HeatLensCLI"]),
+        .testTarget(name: "HeatLensCLITests", dependencies: ["HeatLensCLI"]),
     ]
 )
