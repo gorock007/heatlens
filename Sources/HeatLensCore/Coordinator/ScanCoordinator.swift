@@ -78,6 +78,14 @@ public actor ScanCoordinator {
                                      hostBefore: hostBefore, hostAfter: hostAfter, state: state, ports: ports)
     }
 
+    /// The TCP ports processes listen on right now, from one process reading: no interval, no
+    /// CPU or host sampling, no `ps`. Takes milliseconds, and may run while a scan waits.
+    public func ports() throws -> ScanSnapshot {
+        try Task.checkCancellation()
+        let reading = try processSampler.snapshot()
+        return ScanAssembly.portsSnapshot(reading: reading, ports: portSampler.listeningPorts(of: reading.processes))
+    }
+
     static func clampedDuration(_ duration: TimeInterval) throws -> TimeInterval {
         guard duration.isFinite, duration > 0 else { throw ScanError.invalidDuration }
         return min(max(duration, durationRange.lowerBound), durationRange.upperBound)

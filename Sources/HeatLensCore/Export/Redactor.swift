@@ -46,12 +46,7 @@ public enum Redactor {
             lines.append("  Limitations: \(finding.limitations.joined(separator: "; "))")
         }
 
-        lines.append("Listening ports:")
-        if report.listeningPorts.isEmpty { lines.append("- none") }
-        for listing in report.listeningPorts {
-            let project = listing.projectDirectory.map { "project \(($0 as NSString).lastPathComponent)" } ?? "Unknown project"
-            lines.append("- :\(listing.port) (\(listing.scope)) — \(listing.processName), PID \(listing.pid), \(project)")
-        }
+        lines += portLines(report.listeningPorts)
 
         lines.append("Processes (top \(processLimit) by CPU, plus any named in a finding):")
         if listed.isEmpty { lines.append("- none") }
@@ -65,16 +60,56 @@ public enum Redactor {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// `heatlens ports`: the "Listening ports" section of `textReport` on its own, for a
+    /// `PortsSnapshot` (one process reading, no CPU sample), with its notices.
+    public static func portsTextReport(
+        _ snapshot: ScanSnapshot,
+        groups: [ProcessGroup],
+        homeDirectory: String = NSHomeDirectory()
+    ) -> String {
+        let report = makePortsReport(snapshot, groups: groups, homeDirectory: homeDirectory)
+        var lines = ["HeatLens listening ports, read \(ISO8601DateFormatter().string(from: report.readAt))"]
+        if !report.notices.isEmpty {
+            lines.append("Notices: \(report.notices.joined(separator: "; "))")
+        }
+        lines += portLines(report.listeningPorts)
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// `readAt`, `notices` and the same `listeningPorts` rows as `jsonReport`.
+    public static func portsJSONReport(
+        _ snapshot: ScanSnapshot,
+        groups: [ProcessGroup],
+        homeDirectory: String = NSHomeDirectory()
+    ) throws -> Data {
+        try encoder.encode(makePortsReport(snapshot, groups: groups, homeDirectory: homeDirectory))
+    }
+
     public static func jsonReport(
         _ snapshot: ScanSnapshot,
         groups: [ProcessGroup],
         findings: [DiagnosticFinding],
         homeDirectory: String = NSHomeDirectory()
     ) throws -> Data {
+        try encoder.encode(makeReport(snapshot, groups: groups, findings: findings, homeDirectory: homeDirectory))
+    }
+
+    private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(makeReport(snapshot, groups: groups, findings: findings, homeDirectory: homeDirectory))
+        return encoder
+    }
+
+    /// The "Listening ports:" section, shared by the scan and ports text reports.
+    private static func portLines(_ ports: [RedactedPort]) -> [String] {
+        var lines = ["Listening ports:"]
+        if ports.isEmpty { lines.append("- none") }
+        for listing in ports {
+            let project = listing.projectDirectory.map { "project \(($0 as NSString).lastPathComponent)" } ?? "Unknown project"
+            lines.append("- :\(listing.port) (\(listing.scope)) — \(listing.processName), PID \(listing.pid), \(project)")
+        }
+        return lines
     }
 }
 
@@ -89,6 +124,12 @@ private struct RedactedReport: Codable {
     let processes: [RedactedProcess]
     let groups: [RedactedGroup]
     let findings: [RedactedFinding]
+    let listeningPorts: [RedactedPort]
+}
+
+private struct RedactedPortsReport: Codable {
+    let readAt: Date
+    let notices: [String]
     let listeningPorts: [RedactedPort]
 }
 
@@ -219,18 +260,28 @@ private extension Redactor {
                     recommendedActions: finding.recommendedActions.map { sanitizer.action($0) }
                 )
             },
-            listeningPorts: PortListing.listings(snapshot, groups: groups).map { listing in
-                RedactedPort(
-                    port: listing.port.port,
-                    family: listing.port.family.rawValue,
-                    scope: scopeText(listing.port.scope),
-                    pid: listing.identity.pid,
-                    processName: sanitizer.text(listing.processName),
-                    groupLabel: listing.group.map { sanitizer.text($0.label) },
-                    projectDirectory: listing.group?.project.map { sanitizer.text($0.directory) }
-                )
-            }
+            listeningPorts: portRows(snapshot, groups: groups, sanitizer: sanitizer)
         )
+    }
+
+    static func makePortsReport(_ snapshot: ScanSnapshot, groups: [ProcessGroup], homeDirectory: String) -> RedactedPortsReport {
+        let sanitizer = Sanitizer(homeDirectory: homeDirectory, groups: groups)
+        return RedactedPortsReport(readAt: snapshot.startedAt, notices: snapshot.notices.map(sanitizer.text),
+                                   listeningPorts: portRows(snapshot, groups: groups, sanitizer: sanitizer))
+    }
+
+    static func portRows(_ snapshot: ScanSnapshot, groups: [ProcessGroup], sanitizer: Sanitizer) -> [RedactedPort] {
+        PortListing.listings(snapshot, groups: groups).map { listing in
+            RedactedPort(
+                port: listing.port.port,
+                family: listing.port.family.rawValue,
+                scope: scopeText(listing.port.scope),
+                pid: listing.identity.pid,
+                processName: sanitizer.text(listing.processName),
+                groupLabel: listing.group.map { sanitizer.text($0.label) },
+                projectDirectory: listing.group?.project.map { sanitizer.text($0.directory) }
+            )
+        }
     }
 
     static func scopeText(_ scope: BindScope) -> String {

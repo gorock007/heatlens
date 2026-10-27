@@ -8,6 +8,7 @@ public enum CLICommand: Equatable, Sendable {
     case help
     case version
     case scan(seconds: Int, json: Bool)
+    case ports(json: Bool)
     case mcp
 }
 
@@ -25,7 +26,10 @@ public enum CLIArguments {
         Usage:
           heatlens scan [--seconds N] [--json]   Run one scan (N is 1…15, default 5) and print the
                                                  redacted text report, or the redacted JSON with --json.
-          heatlens mcp                           Run an MCP server over stdio with one read-only tool, scan.
+          heatlens ports [--json]                List the TCP ports processes listen on right now, with
+                                                 their app or project (no CPU sample; redacted).
+          heatlens mcp                           Run an MCP server over stdio with two read-only tools,
+                                                 scan and ports.
           heatlens --help                        Show this help.
           heatlens --version                     Show the version.
 
@@ -60,6 +64,16 @@ public enum CLIArguments {
                 }
             }
             return .scan(seconds: seconds, json: json)
+        case "ports":
+            var json = false
+            while let a = it.next() {
+                switch a {
+                case "--json": json = true
+                case "--help", "-h": return .help
+                default: throw CLIUsageError(description: "unknown flag for ports: \(a)")
+                }
+            }
+            return .ports(json: json)
         default:
             throw CLIUsageError(description: "unknown command: \(first)")
         }

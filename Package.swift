@@ -8,6 +8,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "HeatLensCore", targets: ["HeatLensCore"]),
+        .library(name: "HeatLensCLI", targets: ["HeatLensCLI"]),
         .executable(name: "heatlens-probe", targets: ["heatlens-probe"]),
         .executable(name: "heatlens", targets: ["heatlens"]),
     ],

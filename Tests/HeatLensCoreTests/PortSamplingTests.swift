@@ -275,3 +275,115 @@ struct PortSnapshotTests {
         #expect(none.contains("Listening ports:\n- none\n"))
     }
 }
+
+/// Hands out one fixed reading and counts how often it was asked.
+private final class OneReading: ProcessSampling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    let processes: [ProcessReading]
+    init(_ processes: [ProcessReading]) { self.processes = processes }
+    var calls: Int { lock.withLock { count } }
+    func snapshot() throws -> ProcessCounters {
+        lock.withLock { count += 1 }
+        return ProcessCounters(monotonicNanoseconds: ProcessCounters.monotonicNow(), wallClock: Date(), processes: processes)
+    }
+}
+
+/// Fails the test if a ports read touches host counters or state.
+private struct UnusedSystemSampler: SystemSampling {
+    func counters() -> HostCounters {
+        Issue.record("ports() read host counters")
+        return HostCounters(perCore: nil, swapOuts: nil)
+    }
+    func state() async throws -> HostState {
+        Issue.record("ports() read host state")
+        throw CancellationError()
+    }
+}
+
+@Suite("Ports without a CPU sample")
+struct PortsSnapshotTests {
+    @Test("coordinator.ports() reads processes once, samples ports once, and skips host and CPU sampling")
+    func coordinatorPorts() async throws {
+        let start = Int64(Date().timeIntervalSince1970 * 1_000_000) - 60_000_000
+        let server = ProcessIdentity(pid: 4242, startTimeMicros: start)
+        let other = ProcessIdentity(pid: 4300, startTimeMicros: start)
+        let unknown = ProcessIdentity(pid: 4400, startTimeMicros: start)
+        let readings = [server, other].map {
+            ProcessReading(identity: $0, parentPID: 1, owner: .currentUser, name: "fake-\($0.pid)",
+                           cpu: CPUTime(userNanoseconds: 5_000_000_000, systemNanoseconds: 0), residentBytes: 4096,
+                           detailAccess: .available)
+        }
+        let processes = OneReading(readings)
+        let seen = Recorder<[Int32]>()
+        let ports = FixedPortSampler { processes in
+            seen.append(processes.map(\.identity.pid))
+            return PortReading(ports: [
+                ProcessListeningPorts(identity: server, ports: [ListeningPort(port: 3000, family: .dual, scope: .loopback)]),
+                // Not in the reading: dropped.
+                ProcessListeningPorts(identity: unknown, ports: [ListeningPort(port: 4000, family: .ipv4, scope: .loopback)]),
+            ], refusedCount: 2)
+        }
+        let coordinator = ScanCoordinator(processSampler: processes, systemSampler: UnusedSystemSampler(), portSampler: ports)
+        let snapshot = try await coordinator.ports()
+        #expect(processes.calls == 1)
+        #expect(seen.values == [[4242, 4300]])
+        #expect(snapshot.interval == 0)
+        #expect(snapshot.processes.map(\.pid) == [4242, 4300])
+        #expect(snapshot.processes.allSatisfy { $0.cpu == nil && $0.cpuPercentOfOneCore == nil })
+        #expect(snapshot.listeningPorts == [ProcessListeningPorts(identity: server, ports: [ListeningPort(port: 3000, family: .dual, scope: .loopback)])])
+        #expect(snapshot.notices == ["Listening ports of 2 root/other-user processes are not visible."])
+    }
+
+    @Test("The ports reports use the scan report's port lines and rows, sanitized, with a header and notices")
+    func portsReports() throws {
+        let home = SyntheticSnapshots.home
+        let server = SyntheticSnapshots.process(pid: 123, name: "next-server", executablePath: "/usr/local/bin/node",
+                                                arguments: ["next-server"], currentDirectory: home + "/Developer/my-app", cpu: 1)
+        let lan = SyntheticSnapshots.process(pid: 200, name: "python3", currentDirectory: home, cpu: 0)
+        let snapshot = withPorts(SyntheticSnapshots.snapshot([server, lan]), [
+            ProcessListeningPorts(identity: server.identity, ports: [ListeningPort(port: 3000, family: .dual, scope: .loopback)]),
+            ProcessListeningPorts(identity: lan.identity, ports: [ListeningPort(port: 8765, family: .ipv4, scope: .specificAddress,
+                                                                                 address: "192.168.1.20")]),
+        ], notices: ["Listening ports of 3 root/other-user processes are not visible."])
+        let groups = [
+            ProcessGroup(root: server.identity, members: [server.identity], kind: "next dev", label: "Next.js dev server",
+                         project: ProjectAttribution(directory: home + "/Developer/my-app", basis: "cwd", confidence: .high),
+                         confidence: .high, evidence: []),
+        ]
+        let text = Redactor.portsTextReport(snapshot, groups: groups, homeDirectory: home)
+        let section = "Listening ports:\n- :3000 (loopback) — next-server, PID 123, project my-app\n"
+            + "- :8765 (specific address) — python3, PID 200, Unknown project\n"
+        #expect(text.hasPrefix("HeatLens listening ports, read "))
+        #expect(text.hasSuffix("Notices: Listening ports of 3 root/other-user processes are not visible.\n" + section))
+        // Same lines as the scan report's section.
+        #expect(Redactor.textReport(snapshot, groups: groups, findings: [], homeDirectory: home).contains(section))
+        #expect(!text.contains(home) && !text.contains("192.168.1.20"))
+
+        let json = try Redactor.portsJSONReport(snapshot, groups: groups, homeDirectory: home)
+        let jsonText = String(decoding: json, as: UTF8.self)
+        #expect(!jsonText.contains(home) && !jsonText.contains("192.168.1.20"))
+        let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        #expect(Set(object.keys) == ["readAt", "notices", "listeningPorts"])
+        let full = try #require(try JSONSerialization.jsonObject(with: Redactor.jsonReport(snapshot, groups: groups, findings: [],
+                                                                                          homeDirectory: home)) as? [String: Any])
+        #expect(NSArray(array: object["listeningPorts"] as? [Any] ?? []) == NSArray(array: full["listeningPorts"] as? [Any] ?? []))
+        #expect((object["listeningPorts"] as? [Any])?.count == 2)
+
+        let none = Redactor.portsTextReport(SyntheticSnapshots.snapshot([server]), groups: groups, homeDirectory: home)
+        #expect(none.hasSuffix("Listening ports:\n- none\n"))
+    }
+
+    @Test("Live: ScanPipeline.ports() finds this process's loopback listener in well under a second")
+    func livePipelinePorts() async throws {
+        let listener = try LoopbackListener()
+        let clock = ContinuousClock()
+        let began = clock.now
+        let ports = try await ScanPipeline().ports()
+        let took = began.duration(to: clock.now)
+        #expect(took < .seconds(1), "took \(took)")
+        #expect(ports.listings.contains { $0.identity.pid == getpid() && $0.port.port == listener.port && $0.port.scope == .loopback })
+        #expect(ports.snapshot.interval == 0)
+        withExtendedLifetime(listener) {}
+    }
+}

@@ -94,6 +94,12 @@ done < <(find "$app/Contents" -mindepth 2 \( -name '*.framework' -o -name '*.dyl
 for path in ${nested[@]+"${nested[@]}"}; do
   codesign "${sign_args[@]}" "$path"
 done
+# Helper tools (the heatlens CLI / MCP server), each with a stable identifier, before the app.
+for tool in "$app"/Contents/Helpers/*; do
+  [[ -f "$tool" && -x "$tool" ]] || continue
+  codesign "${sign_args[@]}" --identifier "dev.heatlens.$(basename "$tool")" "$tool"
+  codesign --verify --strict --verbose=2 "$tool"
+done
 codesign "${sign_args[@]}" "$app"
 codesign --verify --strict --verbose=2 "$app"
 

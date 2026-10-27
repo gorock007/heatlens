@@ -88,6 +88,24 @@ enum ScanAssembly {
                             listeningPorts: ports?.ports.filter { known.contains($0.identity) } ?? [])
     }
 
+    /// A ports-only snapshot from one process reading: no CPU figures (`interval` 0, every `cpu`
+    /// nil) and a placeholder `system`, since nothing was sampled over time. Groups and ports are
+    /// as good as a scan's; only the port notice is added.
+    static func portsSnapshot(reading: ProcessCounters, ports: PortReading) -> ScanSnapshot {
+        let samples = reading.processes
+            .map { sample($0, cpu: nil, over: 0, source: nil) }
+            .sorted { ($0.identity.pid, $0.identity.startTimeMicros) < ($1.identity.pid, $1.identity.startTimeMicros) }
+        let memory = MemorySnapshot(totalBytes: 0, freeBytes: 0, activeBytes: 0, inactiveBytes: 0, wiredBytes: 0,
+                                    compressedBytes: 0, swapUsedBytes: 0, swapTotalBytes: 0, swapOutsDelta: 0,
+                                    pressure: .unknown, availablePercent: nil)
+        let system = SystemSample(coreCount: 0, hostBusyFraction: 0, perCoreBusyFraction: [], memory: memory,
+                                  thermalState: .unavailable, pmsetCPUSpeedLimit: nil, pmsetCPUSchedulerLimit: nil)
+        let known = Set(samples.map(\.identity))
+        return ScanSnapshot(startedAt: reading.wallClock, interval: 0, system: system, processes: samples,
+                            notices: portNotices(ports),
+                            listeningPorts: ports.ports.filter { known.contains($0.identity) })
+    }
+
     static func portNotices(_ ports: PortReading?) -> [String] {
         guard let ports, ports.refusedCount > 0 else { return [] }
         return ["Listening ports of \(ports.refusedCount) root/other-user processes are not visible."]

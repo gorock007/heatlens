@@ -14,6 +14,22 @@ public struct ScanResult: Sendable {
     }
 }
 
+/// The listening ports at one instant, grouped like a scan's, without a CPU sample.
+public struct PortsSnapshot: Sendable {
+    /// One process reading: every `cpu` is nil, `interval` is 0 and `system` is a placeholder.
+    /// `listeningPorts` and `notices` (the refused-processes notice) are real.
+    public let snapshot: ScanSnapshot
+    public let groups: [ProcessGroup]
+
+    public init(snapshot: ScanSnapshot, groups: [ProcessGroup]) {
+        self.snapshot = snapshot
+        self.groups = groups
+    }
+
+    /// One row per (port, process), sorted by port then PID.
+    public var listings: [PortListing] { PortListing.listings(snapshot, groups: groups) }
+}
+
 /// The one composition point shared by the app and the probe:
 /// `ScanCoordinator.scan` → `ProvenanceResolver.resolve` → `RulesEngine.evaluate`.
 public struct ScanPipeline: Sendable {
@@ -33,5 +49,12 @@ public struct ScanPipeline: Sendable {
         let groups = ProvenanceResolver.resolve(snapshot)
         let findings = rules.evaluate(snapshot, groups: groups)
         return ScanResult(snapshot: snapshot, groups: groups, findings: findings)
+    }
+
+    /// `ScanCoordinator.ports` → `ProvenanceResolver.resolve`, for `heatlens ports`. No rules run:
+    /// they need CPU figures.
+    public func ports() async throws -> PortsSnapshot {
+        let snapshot = try await coordinator.ports()
+        return PortsSnapshot(snapshot: snapshot, groups: ProvenanceResolver.resolve(snapshot))
     }
 }

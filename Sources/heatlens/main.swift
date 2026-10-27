@@ -35,8 +35,16 @@ case let .scan(seconds, json):
         if showProgress { FileHandle.standardError.write(Data("\r\u{1B}[K".utf8)) }
         fail("scan failed: \(error)", code: 1)
     }
+case let .ports(json):
+    do {
+        let reports = try await LiveScan.ports()
+        print(json ? reports.json : reports.text, terminator: json ? "\n" : "")
+    } catch {
+        fail("reading ports failed: \(error)", code: 1)
+    }
 case .mcp:
-    let server = MCPServer { seconds in try await LiveScan.run(seconds: seconds) }
+    let server = MCPServer(scan: { seconds in try await LiveScan.run(seconds: seconds) },
+                           ports: { try await LiveScan.ports() })
     do {
         for try await line in FileHandle.standardInput.bytes.lines {
             guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }

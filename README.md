@@ -42,22 +42,35 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift test
 
 ## Use from a terminal or an AI agent
 
-`heatlens` runs the same scan as the app and prints the same redacted report. It is read-only:
-it never stops or changes a process.
+HeatLens.app ships a `heatlens` command at `HeatLens.app/Contents/Helpers/heatlens`. It runs the
+same scan as the app and prints the same redacted report. It is read-only: it never stops or
+changes a process.
 
 ```
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-swift build -c release
-.build/release/heatlens scan                 # 5-second scan, text report
-.build/release/heatlens scan --seconds 10 --json > scan.json
+heatlens=/Applications/HeatLens.app/Contents/Helpers/heatlens
+"$heatlens" scan                          # 5-second scan, text report
+"$heatlens" scan --seconds 10 --json > scan.json
+"$heatlens" ports                         # listening TCP ports with their app or project, no CPU sample
+"$heatlens" ports --json
 ```
 
-To let Claude Code (or any MCP client) run a scan, register the stdio MCP server. It has one
-read-only tool, `scan`:
+To let Claude Code, Codex or another MCP client use HeatLens, open **Settings → Connect to an AI
+agent** in the app and click **Copy Claude Code command** (or **Copy** next to Codex), then paste
+it into a terminal. Move HeatLens to Applications first: the command holds the app's path. By hand:
 
 ```
-claude mcp add heatlens -- "$PWD/.build/release/heatlens" mcp
+claude mcp add heatlens -- '/Applications/HeatLens.app/Contents/Helpers/heatlens' mcp
+codex mcp add heatlens -- '/Applications/HeatLens.app/Contents/Helpers/heatlens' mcp
 ```
+
+The MCP server has two read-only tools:
+
+- `scan` (`seconds` 1–15, default 5) returns the text report. Pass `includeJSON: true` to also
+  get the full JSON report as a second, compact item. It is often hundreds of KB, so it's off by default.
+- `ports` (no arguments) returns the listening ports, like the report's "Listening ports"
+  section, in well under a second.
+
+From a checkout, `swift build -c release` builds the same command at `.build/release/heatlens`.
 
 ## Developer CLI
 

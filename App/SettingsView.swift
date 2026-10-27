@@ -49,6 +49,8 @@ struct SettingsView: View {
                     }
                 }
 
+                AgentConnectSection(bundleURL: Bundle.main.bundleURL)
+
                 Text("Settings are stored on this Mac. HeatLens keeps no scan history.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -63,6 +65,85 @@ struct SettingsView: View {
                 .keyboardShortcut(.defaultAction)
         }
         .onAppear { settings.refreshLaunchAtLoginStatus() }
+    }
+}
+
+/// Copies the command that registers the bundled `heatlens mcp` server with an agent. Nothing runs.
+private struct AgentConnectSection: View {
+    let bundleURL: URL
+    @State private var copiedClaude = false
+    @State private var copiedCodex = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Connect to an AI agent")
+                .font(.subheadline.weight(.semibold))
+            Text("Lets Claude Code, Codex or another MCP client run a read-only HeatLens scan.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let helper = AgentCommand.helperPath(bundleURL: bundleURL) {
+                let claude = AgentCommand.claude(helper)
+                let codex = AgentCommand.codex(helper)
+                CommandText(text: claude, font: .caption.monospaced())
+                Button(copiedClaude ? "Copied" : "Copy Claude Code command") {
+                    Pasteboard.copy(claude)
+                    copiedClaude = true
+                }
+                .resetsAfterCopy($copiedClaude)
+                HStack {
+                    Text("Codex")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(copiedCodex ? "Copied" : "Copy") {
+                        Pasteboard.copy(codex)
+                        copiedCodex = true
+                    }
+                    .controlSize(.small)
+                    .resetsAfterCopy($copiedCodex)
+                }
+                .padding(.top, 4)
+                CommandText(text: codex, font: .caption2.monospaced())
+            } else {
+                Text("Move HeatLens to Applications first")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+}
+
+private struct CommandText: View {
+    let text: String
+    let font: Font
+
+    var body: some View {
+        Text(verbatim: text)
+            .font(font)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(4)
+            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+enum AgentCommand {
+    /// The bundled CLI, or nil while the app runs from a translocated copy or a mounted disk
+    /// image, where the path stops working once the app moves or the DMG is ejected.
+    static func helperPath(bundleURL: URL) -> String? {
+        let app = bundleURL.standardizedFileURL.path
+        guard !app.contains("/AppTranslocation/"), !app.hasPrefix("/Volumes/") else { return nil }
+        return bundleURL.appendingPathComponent("Contents/Helpers/heatlens").standardizedFileURL.path
+    }
+
+    static func claude(_ helper: String) -> String { "claude mcp add heatlens -- \(quoted(helper)) mcp" }
+    static func codex(_ helper: String) -> String { "codex mcp add heatlens -- \(quoted(helper)) mcp" }
+
+    /// Single-quoted for the shell, so spaces and other specials are literal.
+    static func quoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 }
 

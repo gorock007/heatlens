@@ -7,7 +7,7 @@ stops, this file must hold everything a fresh session needs: `jarvis watch`
 may `/clear` Jarvis after a long idle.
 
 Jarvis session: cf788b09-038c-480c-b260-e01e536edeef
-Usage band: amber (5h 46% used, 13:14)
+Usage band: amber (5h 53% used, 13:28)
 
 ## Questions for the user
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
@@ -17,11 +17,11 @@ Usage band: amber (5h 46% used, 13:14)
 <!-- `jarvis merge` removes the line -->
 
 ## Waiting on Jarvis
-- User to verify 6a panel (98e38fd) with a PHYSICAL click on the menu-bar icon: worker only tested via AX press (menu-bar manager hid the icon). Risk: an attached panel's resign-key close racing the icon toggle (closes, then reopens).
+- 6a panel: user confirmed drag + Escape 2026-10-27. Still unconfirmed: physical icon click toggles closed (no flicker/reopen).
 <!-- - handoff to review: handoffs/<file>.md · migration to apply · release to cut -->
 
 ## To-do
-- 7a CLI/MCP MERGED. Next after 8a merges: 7b brief: bundle `heatlens` into HeatLens.app (project.yml copy phase, release.sh signs nested binary before notarizing), Settings "Connect to an AI agent" button copying `claude mcp add heatlens -- /Applications/HeatLens.app/Contents/MacOS/heatlens mcp`, a fast `heatlens ports` subcommand (no CPU sample), site/README docs; MCP `scan` returns text report only by default (JSON was 391 KB ≈ 100k tokens per call) with opt-in `includeJSON` (compact, not pretty); add MCP `ports` tool. Version bump: `heatlensVersion` in Sources/HeatLensCLI/Arguments.swift together with MARKETING_VERSION in project.yml. Then release v1.1.0 (Jarvis).
+- 7a CLI/MCP (0d9ec2b) and 8a ports (aaef6bf) MERGED. 7b running (bundle CLI, Settings connect, ports tool, includeJSON). After 7b: Jarvis bumps to 1.1.0 (heatlensVersion in Sources/HeatLensCLI/Arguments.swift + MARKETING_VERSION/CURRENT_PROJECT_VERSION in project.yml), real-identity release.sh + notarize, gh release, site feature lines.
 - Feature backlog (user-approved list, not yet picked): sleep blockers, thermal alert (event-driven), agent awareness, before/after, global hotkey, stop project leftovers. AI ruling: explain + propose typed actions only; no free-form command execution; CLI/MCP read-only.
 - Phase 1 DONE incl. 1c grouping (62 groups on this Mac).
 - Phase 2 safety DONE: 2a/2b/2c/2d merged (d009384); review findings all fixed (#5: scripts/with-timeout.sh). Ruling: exclusion also suppresses stop. 2e docs merged (d7cd4bf): PERFORMANCE.md, SCENARIOS.md, samples/. PRD §11 definition of done met in code; scenarios 8 & 9 are manual-only (need the click-through).

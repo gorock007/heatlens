@@ -22,6 +22,14 @@ targets:
     dependencies:
       - package: HeatLensCore
         product: HeatLensCore
+      # The heatlens CLI / MCP server ships at Contents/Helpers/heatlens: Contents/MacOS/heatlens
+      # would replace the app's own HeatLens executable on a case-insensitive volume.
+      - target: heatlens-cli
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.heatlens.HeatLens
@@ -35,3 +43,22 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         MARKETING_VERSION: "1.0.1"
         CURRENT_PROJECT_VERSION: "2"
+  # Named heatlens-cli, with its own module name, because "heatlens" and "HeatLens" share build
+  # folders and a .swiftmodule on a case-insensitive volume. The product is still heatlens.
+  heatlens-cli:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/heatlens
+    dependencies:
+      - package: HeatLensCore
+        product: HeatLensCLI
+    settings:
+      base:
+        PRODUCT_NAME: heatlens
+        PRODUCT_MODULE_NAME: heatlens_cli
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES

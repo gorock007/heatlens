@@ -3,6 +3,8 @@
 HeatLens ships outside the App Store as a Developer ID–signed, notarized DMG on
 [GitHub Releases](https://github.com/gorock007/heatlens/releases). The version comes from
 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `project.yml`; bump them before a release.
+The version bump also touches `heatlensVersion` in `Sources/HeatLensCLI/Arguments.swift` (what
+`heatlens --version` and the MCP server report), which must equal `MARKETING_VERSION` in `project.yml`.
 
 ## One-time setup
 

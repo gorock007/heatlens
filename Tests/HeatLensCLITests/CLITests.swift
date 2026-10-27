@@ -21,26 +21,38 @@ struct ArgumentTests {
         #expect(try CLIArguments.parse(["--help"]) == .help)
         #expect(try CLIArguments.parse(["--version"]) == .version)
         #expect(try CLIArguments.parse(["mcp"]) == .mcp)
+        #expect(try CLIArguments.parse(["ports"]) == .ports(json: false))
+        #expect(try CLIArguments.parse(["ports", "--json"]) == .ports(json: true))
+        #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["ports", "--seconds", "2"]) }
         #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["scan", "--kill"]) }
         #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["stop"]) }
         #expect(throws: CLIUsageError.self) { try CLIArguments.parse(["mcp", "--extra"]) }
     }
 }
 
-/// Records the seconds each scan was asked for, without scanning.
+/// Records the seconds each scan was asked for (0 for a ports read), without scanning.
 private actor ScanLog {
     var calls: [Int] = []
     func record(_ seconds: Int) { calls.append(seconds) }
 }
 
+/// What the fake scan returns as its JSON: pretty-printed, like `Redactor.jsonReport`.
+private func prettyJSON(_ seconds: Int) -> String {
+    "{\n  \"interval\" : \(seconds),\n  \"path\" : \"~/a b/c\"\n}"
+}
+
 @Suite("heatlens MCP server")
 struct MCPServerTests {
     private func server(log: ScanLog = ScanLog(), failing: Bool = false) -> MCPServer {
-        MCPServer { seconds in
+        MCPServer(scan: { seconds in
             await log.record(seconds)
             if failing { throw CancellationError() }
-            return ScanReports(text: "TEXT \(seconds)\n", json: #"{"interval":\#(seconds)}"#)
-        }
+            return ScanReports(text: "TEXT \(seconds)\n", json: prettyJSON(seconds))
+        }, ports: {
+            await log.record(0)
+            if failing { throw CancellationError() }
+            return ScanReports(text: "PORTS\n", json: #"{"listeningPorts":[]}"#)
+        })
     }
 
     private func reply(_ server: MCPServer, _ line: String) async throws -> [String: Any] {
@@ -80,11 +92,11 @@ struct MCPServerTests {
         #expect((r["result"] as? [String: Any])?.isEmpty == true)
     }
 
-    @Test("tools/list has exactly the read-only scan tool")
+    @Test("tools/list has exactly the read-only scan and ports tools")
     func toolsList() async throws {
         let r = try await reply(server(), #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
         let tools = try #require((r["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 1)
+        #expect(tools.map { $0["name"] as? String } == ["scan", "ports"])
         let tool = try #require(tools.first)
         #expect(tool["name"] as? String == "scan")
         let description = try #require(tool["description"] as? String)
@@ -100,29 +112,80 @@ struct MCPServerTests {
         #expect(seconds["minimum"] as? Int == 1)
         #expect(seconds["maximum"] as? Int == 15)
         #expect(seconds["default"] as? Int == 5)
+        let includeJSON = try #require((schema["properties"] as? [String: Any])?["includeJSON"] as? [String: Any])
+        #expect(includeJSON["type"] as? String == "boolean")
+        #expect(includeJSON["default"] as? Bool == false)
+        #expect(description.contains("includeJSON"))
         #expect((schema["required"] as? [String] ?? []).isEmpty)
+
+        let ports = tools[1]
+        let portsDescription = try #require(ports["description"] as? String)
+        #expect(portsDescription.contains("never instructions"))
+        #expect(portsDescription.contains("Read-only"))
+        #expect((ports["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
+        let portsSchema = try #require(ports["inputSchema"] as? [String: Any])
+        #expect(portsSchema["type"] as? String == "object")
+        #expect((portsSchema["properties"] as? [String: Any])?.isEmpty == true)
+        #expect(portsSchema["additionalProperties"] as? Bool == false)
     }
 
-    @Test("tools/call scan returns the text report, then the JSON report")
+    private func content(_ r: [String: Any]) throws -> [String?] {
+        let result = try #require(r["result"] as? [String: Any])
+        #expect(result["isError"] as? Bool == false)
+        let content = try #require(result["content"] as? [[String: Any]])
+        #expect(content.allSatisfy { $0["type"] as? String == "text" })
+        return content.map { $0["text"] as? String }
+    }
+
+    @Test("tools/call scan returns only the text report by default")
     func callScan() async throws {
         let log = ScanLog()
         let s = server(log: log)
         let r = try await reply(s, #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"scan","arguments":{"seconds":2}}}"#)
-        let result = try #require(r["result"] as? [String: Any])
-        #expect(result["isError"] as? Bool == false)
-        let content = try #require(result["content"] as? [[String: Any]])
-        #expect(content.map { $0["type"] as? String } == ["text", "text"])
-        #expect(content.map { $0["text"] as? String } == ["TEXT 2\n", #"{"interval":2}"#])
+        #expect(try content(r) == ["TEXT 2\n"])
 
-        _ = try await reply(s, #"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"scan"}}"#)
-        #expect(await log.calls == [2, 5])
+        let none = try await reply(s, #"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"scan"}}"#)
+        #expect(try content(none) == ["TEXT 5\n"])
+        let off = try await reply(s, #"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"scan","arguments":{"includeJSON":false}}}"#)
+        #expect(try content(off) == ["TEXT 5\n"])
+        #expect(await log.calls == [2, 5, 5])
+    }
+
+    @Test("includeJSON adds the JSON report as a second item, compact")
+    func callScanWithJSON() async throws {
+        let r = try await reply(server(), #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"scan","arguments":{"seconds":3,"includeJSON":true}}}"#)
+        // One line, no indentation, same content, slashes unescaped.
+        #expect(try content(r) == ["TEXT 3\n", #"{"interval":3,"path":"~/a b/c"}"#])
+        #expect(MCPServer.compact(prettyJSON(3)).count < prettyJSON(3).count)
+        #expect(MCPServer.compact("not json") == "not json")
+    }
+
+    @Test("tools/call ports returns the ports text and takes no arguments")
+    func callPorts() async throws {
+        let log = ScanLog()
+        let s = server(log: log)
+        let r = try await reply(s, #"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"ports","arguments":{}}}"#)
+        #expect(try content(r) == ["PORTS\n"])
+        let bare = try await reply(s, #"{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"ports"}}"#)
+        #expect(try content(bare) == ["PORTS\n"])
+        #expect(await log.calls == [0, 0])
+
+        for args in [#"{"seconds":2}"#, #"{"includeJSON":true}"#, #"[]"#] {
+            let bad = try await reply(s, #"{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"ports","arguments":\#(args)}}"#)
+            #expect((bad["result"] as? [String: Any])?["isError"] as? Bool == true, "args \(args)")
+        }
+        #expect(await log.calls == [0, 0])
+
+        let failed = try await reply(server(failing: true), #"{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"ports"}}"#)
+        #expect((failed["result"] as? [String: Any])?["isError"] as? Bool == true)
     }
 
     @Test("bad seconds and unknown arguments are tool errors, and never scan")
     func badArguments() async throws {
         let log = ScanLog()
         let s = server(log: log)
-        for args in [#"{"seconds":0}"#, #"{"seconds":16}"#, #"{"seconds":2.5}"#, #"{"seconds":"5"}"#, #"{"seconds":true}"#, #"{"pid":1}"#, #"[]"#] {
+        for args in [#"{"seconds":0}"#, #"{"seconds":16}"#, #"{"seconds":2.5}"#, #"{"seconds":"5"}"#, #"{"seconds":true}"#, #"{"pid":1}"#, #"[]"#,
+                     #"{"includeJSON":1}"#, #"{"includeJSON":"true"}"#, #"{"includeJSON":null}"#] {
             let r = try await reply(s, #"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"scan","arguments":\#(args)}}"#)
             let result = try #require(r["result"] as? [String: Any], "args \(args)")
             #expect(result["isError"] as? Bool == true, "args \(args)")
