@@ -126,8 +126,11 @@ Next-step brief: [PHASE-1-REPORT.md § Next](PHASE-1-REPORT.md#next-phase-2-brie
   processes under 50 ms. Live cost 1.15% of one core at 5 s.
 - **Not yet driven in the app:** the Projects card (the screen was locked during the click-through).
 
-- 2c History store: system `libsqlite3`, a high-resolution window plus a rollup, retention setting,
-  "Delete history".
+### 2c · History store ✅ (ADR-0005)
+- **Did:** `HistoryStore` (system SQLite, actor), `HistoryRecorder`, "Keep history" (off),
+  retention 1/7/30 days, Delete history, size in Settings. Written only by `LiveMonitor`.
+- **Accepted:** permissions and symlink refusal, round trip with bound values, minute rollups,
+  retention, a 7-day size bound (6.5 MB worst case), delete, no writes outside a session.
 - 2d Timeline view: thermal, CPU, swap, container starts, test runs.
 - 2e Concurrent expensive-command detection (`npm ci`, `vitest`, `next build`, `docker build`),
   labelled as inference.

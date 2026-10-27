@@ -102,6 +102,26 @@ struct LiveMonitorTests {
         #expect(await !live.isRunning)
     }
 
+    @Test("History is written once per tick during a session, and never before start or after stop")
+    func historyOnlyFromTicks() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("heatlens-live-\(UUID().uuidString)/history.sqlite")
+        let store = try HistoryStore(url: url)
+        let sampler = ScriptedProcessSampler { call in [reading(10, cpuSeconds: Double(call))] }
+        let live = monitor(sampler)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(try await store.counts().samples == 0)
+        let stream = await live.start(LiveConfiguration(history: store))
+        let got = await ticks(stream, count: 3)
+        await live.stop()
+        #expect(got.count == 3)
+        #expect(await eventually { (try? await store.counts().samples) ?? 0 >= 3 })
+        let written = try await store.counts().samples
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(try await store.counts().samples == written)
+        #expect(got.allSatisfy { $0.historyFailure == nil })
+        try await HistoryStore.deleteHistory(at: url, closing: store)
+    }
+
     @Test("CPU is the delta between consecutive ticks, 100 = one core")
     func deltas() async {
         // Cumulative CPU 0 s, 0.5 s, 1.5 s, 1.75 s at 1 s steps.

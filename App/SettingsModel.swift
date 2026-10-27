@@ -34,6 +34,8 @@ final class SettingsModel {
         static let customLabels = "customLabels"
         static let projectMappings = "projectMappings"
         static let liveInterval = "liveInterval"
+        static let keepHistory = "keepHistory"
+        static let historyRetentionDays = "historyRetentionDays"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -76,6 +78,16 @@ final class SettingsModel {
     var liveInterval: TimeInterval {
         didSet { defaults.set(liveInterval, forKey: Key.liveInterval) }
     }
+    /// Off by default: live ticks are saved to a local, bounded history (docs/v2/ADR-0005).
+    var keepHistory: Bool {
+        didSet { defaults.set(keepHistory, forKey: Key.keepHistory) }
+    }
+    var historyRetentionDays: Int {
+        didSet {
+            defaults.set(historyRetentionDays, forKey: Key.historyRetentionDays)
+            HistoryService.shared.setRetention(days: historyRetentionDays)
+        }
+    }
     /// Set by `GlobalHotkey` when ⌃⌥H couldn't be registered, usually because another app holds it.
     var globalHotkeyConflict = false
     /// True when the user has turned HeatLens notifications off in System Settings.
@@ -99,6 +111,9 @@ final class SettingsModel {
         projectMappingsText = defaults.string(forKey: Key.projectMappings) ?? ""
         let storedInterval = defaults.double(forKey: Key.liveInterval)
         liveInterval = LiveConfiguration.intervals.contains(storedInterval) ? storedInterval : 5
+        keepHistory = defaults.bool(forKey: Key.keepHistory)
+        let storedRetention = defaults.integer(forKey: Key.historyRetentionDays)
+        historyRetentionDays = HistoryStore.retentionChoices.contains(storedRetention) ? storedRetention : HistoryStore.defaultRetentionDays
         refreshLaunchAtLoginStatus()
     }
 

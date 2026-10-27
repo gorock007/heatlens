@@ -87,7 +87,7 @@ swift run heatlens-probe
 - Fully local: no account or API key. The only network request is the update check, and only when you click Check for updates.
 - No telemetry or analytics.
 - No file contents are read.
-- Nothing is stored except user settings.
+- Nothing is stored except user settings, and the local history if you turn it on.
 - Reports redact home paths and process arguments by default.
 - Optional thermal alert, off by default: when macOS reports serious heat, HeatLens runs one scan
   and posts one notification naming the top culprit, at most every 30 minutes. Nothing runs in between.
@@ -96,6 +96,9 @@ swift run heatlens-probe
   Settings. CPU energy per process comes from a public macOS API.
 - Docker containers (v2, off by default): read-only queries to Docker's local socket. HeatLens
   never starts Docker.
+- History (v2, off by default): with "Keep history" on, Live mode's updates are saved in
+  `~/Library/Application Support/HeatLens/history.sqlite` (owner-only), at most 30 days. Never
+  command lines or file contents. Settings → Delete history removes it.
 - Optional global shortcut ⌃⌥H, off by default, opens or closes the panel from any app. It needs no
   Accessibility permission.
 

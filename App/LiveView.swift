@@ -76,6 +76,10 @@ private struct Controls: View {
                 Text(reason)
                     .font(.caption)
                     .foregroundStyle(.orange)
+            } else if let failure = model.latest?.historyFailure, model.isRunning {
+                Text("History not saved: \(failure)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
             } else if let tick = model.latest, model.isRunning {
                 Text("Live · update \(tick.sequence) · \(String(format: "%.0f", tick.collectionSeconds * 1000)) ms to collect · stops when you close the panel")
                     .font(.caption2)

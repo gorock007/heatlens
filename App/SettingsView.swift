@@ -1,3 +1,4 @@
+import HeatLensCore
 import SwiftUI
 
 struct SettingsView: View {
@@ -134,10 +135,57 @@ private struct MonitoringSourcesSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            HistorySection(settings: settings)
             Text("Changes apply to the next scan or live start.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+/// "Keep history": off by default; retention; size on disk and Delete history.
+private struct HistorySection: View {
+    @Bindable var settings: SettingsModel
+    @State private var size: UInt64 = HistoryService.shared.fileSize
+    @State private var confirmingDelete = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Keep history", isOn: $settings.keepHistory)
+            Text("Saves Live mode's updates (load, heat, swap, power, project names and folders, container and process names) on this Mac, so the timeline can look back. Never command lines or file contents. Only while Live runs.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Picker("Keep for", selection: $settings.historyRetentionDays) {
+                    ForEach(HistoryStore.retentionChoices, id: \.self) { Text($0 == 1 ? "1 day" : "\($0) days").tag($0) }
+                }
+                .fixedSize()
+                Spacer()
+                Text(size == 0 ? "Nothing saved" : Format.bytes(size))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Delete history…") { confirmingDelete = true }
+                    .disabled(size == 0)
+            }
+            .controlSize(.small)
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .confirmationDialog("Delete all saved history?", isPresented: $confirmingDelete) {
+            Button("Delete history", role: .destructive) {
+                Task {
+                    await HistoryService.shared.deleteHistory()
+                    error = HistoryService.shared.lastError
+                    size = HistoryService.shared.fileSize
+                }
+            }
+        } message: {
+            Text("Removes the history file from this Mac. Live mode keeps working.")
+        }
+        .onAppear { size = HistoryService.shared.fileSize }
     }
 }
 

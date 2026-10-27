@@ -22,11 +22,14 @@ public struct LiveConfiguration: Sendable {
     /// One locator per app, so its cache spans sessions.
     public var projectLocator: ProjectRootLocator?
     public var projectMappings: [ProjectMapping]
+    /// Where ticks are kept when the user turned on "Keep history"; nil writes nothing.
+    public var history: HistoryStore?
 
     public init(interval: TimeInterval = 5, hardware: any HardwareSensorProviding = DisabledHardwareProvider(),
                 docker: any DockerSampling = DisabledDockerSampler(), userRules: [WorkloadRule] = [],
                 autoPauseAfter: TimeInterval = 15 * 60, historyCapacity: Int = 150, topCount: Int = 12,
-                projectLocator: ProjectRootLocator? = nil, projectMappings: [ProjectMapping] = []) {
+                projectLocator: ProjectRootLocator? = nil, projectMappings: [ProjectMapping] = [],
+                history: HistoryStore? = nil) {
         self.interval = Self.clamped(interval)
         self.hardware = hardware
         self.docker = docker
@@ -36,6 +39,7 @@ public struct LiveConfiguration: Sendable {
         self.topCount = max(1, topCount)
         self.projectLocator = projectLocator
         self.projectMappings = projectMappings
+        self.history = history
     }
 
     static func clamped(_ interval: TimeInterval) -> TimeInterval {
@@ -61,6 +65,8 @@ public struct LiveTick: Sendable {
     public let history: LiveHistory.Window
     /// Wall time this tick spent reading and computing (not the interval).
     public let collectionSeconds: TimeInterval
+    /// Set when the previous tick couldn't be saved to the history; the session goes on.
+    public var historyFailure: String? = nil
 }
 
 public enum LiveEvent: Sendable {
@@ -160,6 +166,7 @@ public actor LiveMonitor {
         let startedAt = ContinuousClock.now
         var history = LiveHistory(capacity: configuration.historyCapacity)
         var sequence = 0
+        var historyFailure: String?
         do {
             var previousProcesses = try processSampler.snapshot()
             var previousHost = systemSampler.counters()
@@ -189,8 +196,17 @@ public actor LiveMonitor {
                 let tick = LiveTick(sequence: sequence, snapshot: snapshot, groups: groups, hardware: hardware, docker: docker,
                                     projects: projects, topByCPU: byCPU, topByMemory: byMemory,
                                     history: history.window(for: Set((byCPU + byMemory).map(\.identity))),
-                                    collectionSeconds: Self.seconds(began.duration(to: .now)))
+                                    collectionSeconds: Self.seconds(began.duration(to: .now)), historyFailure: historyFailure)
                 emit(.tick(tick), session: id)
+                if let store = configuration.history {
+                    do {
+                        try await store.record(HistoryRecorder.point(from: tick), projects: HistoryRecorder.projectPoints(from: tick),
+                                               events: [])
+                        historyFailure = nil
+                    } catch {
+                        historyFailure = "\(error)"
+                    }
+                }
                 previousProcesses = processes
                 previousHost = host
                 previousDocker = dockerReading

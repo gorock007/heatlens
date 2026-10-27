@@ -39,7 +39,9 @@ final class LiveModel {
         let options = settings.collectionOptions
         let configuration = LiveConfiguration(interval: settings.liveInterval, hardware: options.hardwareProvider,
                                               docker: options.dockerSampler, userRules: options.userRules,
-                                              projectLocator: .shared, projectMappings: options.projectMappings)
+                                              projectLocator: .shared, projectMappings: options.projectMappings,
+                                              history: settings.keepHistory
+                                                ? HistoryService.shared.store(retentionDays: settings.historyRetentionDays) : nil)
         state = .starting
         let monitor = self.monitor
         consumer = Task { [weak self] in
