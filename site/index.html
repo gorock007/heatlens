@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HeatLens: see what's using your Mac, why, and what you can safely do</title>
-  <meta name="description" content="HeatLens is a free, on-demand menu-bar app for Apple Silicon Macs. Click once to see what's using your Mac, why, and what you can safely stop. Fully offline, read-only, open source.">
+  <meta name="description" content="HeatLens is a free, on-demand menu-bar app for Apple Silicon Macs. Click once to see what's using your Mac, why, and what you can safely stop. Fully offline, open source, and nothing changes without your confirmation.">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#b8321a">
   <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
@@ -18,7 +18,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="HeatLens">
   <meta property="og:title" content="HeatLens: see what's using your Mac, why, and what you can safely do">
-  <meta property="og:description" content="A free, on-demand menu-bar app for Apple Silicon Macs. Fully offline, read-only, open source.">
+  <meta property="og:description" content="A free, on-demand menu-bar app for Apple Silicon Macs. Fully offline, open source, and nothing changes without your confirmation.">
   <meta property="og:url" content="https://heatlens-app.vercel.app/">
   <meta property="og:image" content="https://heatlens-app.vercel.app/og.png">
   <meta property="og:image:width" content="1200">
@@ -26,7 +26,7 @@
   <meta property="og:image:alt" content="HeatLens. Click once. See what's using your Mac, why, and what you can safely do.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="HeatLens: see what's using your Mac, why, and what you can safely do">
-  <meta name="twitter:description" content="A free, on-demand menu-bar app for Apple Silicon Macs. Fully offline, read-only, open source.">
+  <meta name="twitter:description" content="A free, on-demand menu-bar app for Apple Silicon Macs. Fully offline, open source, and nothing changes without your confirmation.">
   <meta name="twitter:image" content="https://heatlens-app.vercel.app/og.png">
 </head>
 <body>
@@ -246,7 +246,7 @@
         <div class="head reveal">
           <p class="eyebrow">How it works</p>
           <h2 id="how-title" class="h-lg">Click, sample, <em>read.</em></h2>
-          <p class="lede">HeatLens lives in the menu bar, has no Dock icon, and does nothing until you ask. One scan is a short, bounded sample. There is no background monitoring and no history.</p>
+          <p class="lede">HeatLens lives in the menu bar, has no Dock icon, and does nothing until you ask. One scan is a short, bounded sample. Background watching, alerts and history are optional and off by default.</p>
         </div>
         <ol class="cards">
           <li class="card reveal">
@@ -424,12 +424,12 @@
           <li class="reveal">
             <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg></span>
             <h3>Idle means idle</h3>
-            <p>No timers and no polling. Measured idle at 0.0% CPU and about 18 MB of memory.</p>
+            <p>Out of the box, no timers and no polling. Measured idle at 0.0% CPU and about 18 MB of memory.</p>
           </li>
           <li class="reveal">
             <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></svg></span>
             <h3>Nothing kept</h3>
-            <p>No scan history. Apart from your settings, nothing is stored after you quit.</p>
+            <p>By default, apart from your settings, nothing is stored after you quit. Keep history is optional, off by default, and local.</p>
           </li>
           <li class="reveal">
             <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="2"/><path d="M10 4V3h4v1M10 10h4M10 14h4"/></svg></span>
@@ -466,7 +466,7 @@
         <div class="head reveal">
           <p class="eyebrow">Safe by construction</p>
           <h2 id="safety-title" class="h-lg">It reads. <em>You decide.</em></h2>
-          <p class="lede">The one thing HeatLens can change on your Mac is to send a single, polite stop signal to a process you own, and only after you have read the confirmation and clicked.</p>
+          <p class="lede">The one thing HeatLens can change on your Mac is to send a single, polite stop signal to a process you own, and only after you have read the confirmation and clicked. Force Quit and stopping a container exist too, behind off-by-default switches, each with its own confirmation.</p>
         </div>
         <div class="safety">
           <figure class="art art-tall t-ember reveal" role="img" aria-label="The stop confirmation sheet. Title: Send SIGTERM? PID 12874. Command: node worker.js in the demo-site project. Impact: 0.0% CPU in this sample, stopping it is unlikely to cool your Mac. Warning: stopping a dev server or agent can interrupt tests, edits, builds or active sessions. Buttons: Cancel, which is the default, and Send SIGTERM.">
@@ -494,7 +494,7 @@
             </li>
             <li class="reveal">
               <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v6c0 4.5-3.2 7.8-7.5 9-4.3-1.2-7.5-4.5-7.5-9V6z"/><path d="M9 12.2l2 2 4-4.2"/></svg></span>
-              <div><h3>A stop is one SIGTERM, confirmed</h3><p>Sent to one PID, after re-checking it is still the same process. No force-quit, no bulk kill, and HeatLens tells you what happened.</p></div>
+              <div><h3>A stop is one SIGTERM, confirmed</h3><p>Sent to one PID, after re-checking it is still the same process. No force-quit unless you turn on that off-by-default switch, no bulk kill, and HeatLens tells you what happened.</p></div>
             </li>
             <li class="reveal">
               <span class="mini-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
@@ -535,7 +535,7 @@
           <details>
             <summary>Does it run in the background?</summary>
             <div class="answer">
-              <p>Only the menu-bar icon. HeatLens has no timers and no polling; it scans when you click Scan now, or once when macOS reports serious heat if you turned on the optional thermal alert. Measured on the development Mac, the idle app sits at 0.0% CPU with no change in CPU time between samples, and about 18 MB of memory as reported by top. A scan costs about one second of CPU spread over its five to ten seconds. Launch at login is off by default.</p>
+              <p>Not by default. Out of the box HeatLens has no timers and no polling; it scans when you click Scan now, or once when macOS reports serious heat if you turned on the optional thermal alert. If you turn on Keep watching in the background, it samples every 30 seconds on power and 60 on battery (more often while something is busy, every 120 seconds in Low Power Mode), at a cost of a fraction of a percent of one core; Quit stops it. Measured on the development Mac, the idle app sits at 0.0% CPU with no change in CPU time between samples, and about 18 MB of memory as reported by top. A scan costs about one second of CPU spread over its five to ten seconds. Launch at login is off by default.</p>
             </div>
           </details>
           <details>
