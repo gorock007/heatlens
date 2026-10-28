@@ -41,8 +41,8 @@ targets:
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
         ENABLE_HARDENED_RUNTIME: YES
-        MARKETING_VERSION: "1.2.1"
-        CURRENT_PROJECT_VERSION: "5"
+        MARKETING_VERSION: "1.2.2"
+        CURRENT_PROJECT_VERSION: "6"
   # Named heatlens-cli, with its own module name, because "heatlens" and "HeatLens" share build
   # folders and a .swiftmodule on a case-insensitive volume. The product is still heatlens.
   heatlens-cli:

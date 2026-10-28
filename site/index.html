@@ -164,7 +164,6 @@
             <a href="#how">How it works</a>
             <a href="#shows">What it shows</a>
             <a href="#safety">Safety</a>
-            <a href="#limits">Limits</a>
             <a href="#faq">FAQ</a>
           </nav>
         </div>
@@ -507,61 +506,6 @@
             </li>
           </ul>
         </div>
-      </div>
-    </section>
-
-    <!-- ── free ─────────────────────────────────────────────── -->
-    <section class="section free" id="free" aria-labelledby="free-title">
-      <div class="wrap">
-        <div class="head center reveal">
-          <p class="eyebrow">Price</p>
-          <h2 id="free-title" class="h-lg">No price tag.<br><em>No strings.</em></h2>
-        </div>
-        <div class="price reveal">
-          <div class="price-main">
-            <div class="price-top"><span class="price-name">HeatLens</span><span class="price-tag">Open source</span></div>
-            <p class="price-desc">Everything on this page, on your Mac.</p>
-            <p class="price-amount"><span class="cur">$</span>0</p>
-            <p class="price-terms">MIT license · signed and notarized</p>
-            <a class="btn btn-primary btn-block" href="https://github.com/gorock007/heatlens/releases/latest/download/HeatLens.dmg">
-              <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .75.75v6.44l2-2a.75.75 0 1 1 1.06 1.06l-3.28 3.28a.75.75 0 0 1-1.06 0L4.19 7.75a.75.75 0 0 1 1.06-1.06l2 2V2.25A.75.75 0 0 1 8 1.5zM2.75 11a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v2.25a.75.75 0 0 1-.75.75h-10.5a.75.75 0 0 1-.75-.75v-2.25a.75.75 0 0 1 .75-.75z"/></svg>
-              Download HeatLens.dmg
-            </a>
-            <p class="price-links"><a href="https://github.com/gorock007/heatlens">View source ↗</a><a href="https://github.com/gorock007/heatlens/releases/latest">Release notes ↗</a></p>
-          </div>
-          <div class="price-side">
-            <h3>The whole app. Nothing held back.</h3>
-            <ul>
-              <li>Every feature on this page</li>
-              <li>The read-only MCP server and command-line tool</li>
-              <li>No account, telemetry or analytics</li>
-              <li>Updates checked only when you click</li>
-              <li>Build it yourself from the source if you prefer</li>
-            </ul>
-          </div>
-        </div>
-        <figure class="quote reveal">
-          <blockquote><p>“Being busy does not mean it is the cause of heat.”</p></blockquote>
-          <figcaption>A caption HeatLens shows on its findings</figcaption>
-        </figure>
-      </div>
-    </section>
-
-    <!-- ── limits ───────────────────────────────────────────── -->
-    <section class="section limits-section" id="limits" aria-labelledby="limits-title">
-      <div class="wrap">
-        <div class="head center reveal">
-          <h2 id="limits-title" class="h-md">What it <em>can't</em> tell you.</h2>
-          <p class="lede">These are limits of what macOS exposes without special privileges. HeatLens shows Not accessible or Unavailable in those places instead of estimating.</p>
-        </div>
-        <ul class="limits">
-          <li class="reveal"><h3>No temperature</h3><p>No supported API gives a reliable chip temperature. The thermal state is the OS's coarse state, not a measurement.</p></li>
-          <li class="reveal"><h3>No GPU percentage</h3><p>WindowServer CPU is shown as UI and rendering activity: a signal, not a GPU figure.</p></li>
-          <li class="reveal"><h3>Other users' processes</h3><p>Root and other-user processes have no command line, working directory or precise CPU; CPU comes from ps at 10 ms resolution.</p></li>
-          <li class="reveal"><h3>kernel_task has no numbers</h3><p>It reports only its name and owner. Its load counts only in the host total.</p></li>
-          <li class="reveal"><h3>Flags are not proof</h3><p>"Possible leftover" means review candidate. A two-day-old process with parent PID 1 may be a daemon doing useful work.</p></li>
-          <li class="reveal"><a href="https://github.com/gorock007/heatlens/blob/main/docs/LIMITATIONS.md"><h3>The full list ↗</h3><p>Every limit, with the reasons, in docs/LIMITATIONS.md.</p></a></li>
-        </ul>
       </div>
     </section>
 
