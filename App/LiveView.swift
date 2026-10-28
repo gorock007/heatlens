@@ -40,11 +40,12 @@ struct LiveView: View {
                         TopList(title: "Top CPU", processes: tick.topByCPU, tick: tick, metric: .cpu) { inspect($0, in: tick) }
                         TopList(title: "Top memory", processes: tick.topByMemory, tick: tick, metric: .memory) { inspect($0, in: tick) }
                         HardwareCard(sample: tick.hardware)
-                        DockerCard(snapshot: tick.docker.availability == .disabled ? nil : tick.docker) {
+                        // No onInspect: Live rows change under the pointer, so stops come only from a scan result (ADR-0007).
+                        DockerCard(snapshot: tick.docker.availability == .disabled ? nil : tick.docker, onTurnOn: {
                             // Same switch as Settings; restart so the session picks it up.
                             model.settings.dockerEnabled = true
                             if model.isRunning { model.start() }
-                        }
+                        })
                         ForEach(tick.snapshot.notices, id: \.self) { notice in
                             Label(notice, systemImage: "info.circle")
                                 .font(.caption)

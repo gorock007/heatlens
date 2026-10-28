@@ -32,6 +32,7 @@ final class SettingsModel {
         static let hardwareSensorsEnabled = "hardwareSensorsEnabled"
         static let dockerEnabled = "dockerEnabled"
         static let forceQuitEnabled = "forceQuitEnabled"
+        static let containerStopEnabled = "containerStopEnabled"
         static let customLabels = "customLabels"
         static let projectMappings = "projectMappings"
         static let liveInterval = "liveInterval"
@@ -75,6 +76,14 @@ final class SettingsModel {
     var forceQuitEnabled: Bool {
         didSet { defaults.set(forceQuitEnabled, forKey: Key.forceQuitEnabled) }
     }
+    /// Off by default, and only in effect while `dockerEnabled` is on: a scan result's container
+    /// detail offers "Stop container…", which is `docker stop` (docs/v2/ADR-0007). Off, HeatLens
+    /// only reads from Docker. Turning Docker off keeps this value but disables stopping.
+    var containerStopEnabled: Bool {
+        didSet { defaults.set(containerStopEnabled, forKey: Key.containerStopEnabled) }
+    }
+    /// Docker is on and "Allow stopping a container" is on.
+    var canStopContainers: Bool { dockerEnabled && containerStopEnabled }
     /// `token = Label` lines; see `WorkloadRule.parse`.
     var customLabels: String {
         didSet { defaults.set(customLabels, forKey: Key.customLabels) }
@@ -129,6 +138,7 @@ final class SettingsModel {
         hardwareSensorsEnabled = defaults.object(forKey: Key.hardwareSensorsEnabled) as? Bool ?? true
         dockerEnabled = defaults.bool(forKey: Key.dockerEnabled)
         forceQuitEnabled = defaults.bool(forKey: Key.forceQuitEnabled)
+        containerStopEnabled = defaults.bool(forKey: Key.containerStopEnabled)
         customLabels = defaults.string(forKey: Key.customLabels) ?? ""
         projectMappingsText = defaults.string(forKey: Key.projectMappings) ?? ""
         let storedInterval = defaults.double(forKey: Key.liveInterval)

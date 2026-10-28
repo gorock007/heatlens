@@ -94,8 +94,9 @@ swift run heatlens-probe
 - Hardware sensors (v2, on by default): temperatures, fans and system power are read from the
   SMC, an undocumented macOS interface, read-only and without admin rights. Turn them off in
   Settings. CPU energy per process comes from a public macOS API.
-- Docker containers (v2, off by default): read-only queries to Docker's local socket. HeatLens
-  never starts Docker.
+- Docker containers (v2, off by default): by default, read-only queries to Docker's local socket.
+  HeatLens never starts Docker. With "Allow stopping a container" on in Settings, a scan result's
+  container detail can stop that one container, the way `docker stop` does, after a confirmation.
 - History (v2, off by default): with "Keep history" on, Live mode's updates are saved in
   `~/Library/Application Support/HeatLens/history.sqlite` (owner-only), at most 30 days. Never
   command lines or file contents. Settings → Delete history removes it.

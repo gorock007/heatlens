@@ -8,6 +8,8 @@ struct ProjectsCard: View {
     let groups: [ProcessGroup]
     /// Projects shown before "Show all".
     var limit = 5
+    /// When set, container rows open the container's detail (scan results only; Live passes none).
+    var onInspectContainer: ((ContainerSample) -> Void)? = nil
     @State private var showAll = false
 
     var body: some View {
@@ -23,7 +25,8 @@ struct ProjectsCard: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(showAll ? projects : Array(projects.prefix(limit))) { usage in
-                ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions)
+                ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions,
+                           onInspectContainer: onInspectContainer)
             }
             if projects.count > limit {
                 Button(showAll ? "Show fewer" : "Show all \(projects.count) projects") { showAll.toggle() }
@@ -31,7 +34,8 @@ struct ProjectsCard: View {
                     .font(.caption)
             }
             ForEach(others) { usage in
-                ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions)
+                ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions,
+                           onInspectContainer: onInspectContainer)
             }
             ForEach(breakdown.notices, id: \.self) { notice in
                 Label(notice, systemImage: "info.circle")
@@ -47,6 +51,7 @@ private struct ProjectRow: View {
     let usage: ProjectUsage
     let groups: [ProcessGroup]
     let attributions: [String: ContainerAttribution]
+    let onInspectContainer: ((ContainerSample) -> Void)?
 
     var body: some View {
         DisclosureGroup {
@@ -75,11 +80,22 @@ private struct ProjectRow: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(usage.containers) { container in
-                    let source = attributions[container.containerID]?.evidence.source
-                    Text(verbatim: (["Container \(container.name)", ProjectFormat.cpu(container.cpuPercentOfOneCore)].compactMap { $0 }
-                                    + [source.map { "from \($0)" }].compactMap { $0 }).joined(separator: " · "))
-                        .font(.caption)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let onInspectContainer {
+                        Button { onInspectContainer(container) } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                containerLine(container)
+                                Spacer(minLength: 4)
+                                Text("Inspect")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Inspect container")
+                    } else {
+                        containerLine(container)
+                    }
                 }
             }
             .padding(.leading, 4)
@@ -99,6 +115,14 @@ private struct ProjectRow: View {
                     .font(.callout.monospacedDigit())
             }
         }
+    }
+
+    private func containerLine(_ container: ContainerSample) -> some View {
+        let source = attributions[container.containerID]?.evidence.source
+        return Text(verbatim: (["Container \(container.name)", ProjectFormat.cpu(container.cpuPercentOfOneCore)].compactMap { $0 }
+                               + [source.map { "from \($0)" }].compactMap { $0 }).joined(separator: " · "))
+            .font(.caption)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var detail: String {

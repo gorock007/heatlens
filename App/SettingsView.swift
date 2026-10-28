@@ -134,7 +134,9 @@ private struct MonitoringSourcesSection: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Toggle("Docker containers", isOn: $settings.dockerEnabled)
-                Text("Lists containers and their CPU and memory through the local Docker socket, read-only. HeatLens never starts Docker or changes a container.")
+                Text(settings.canStopContainers
+                     ? "Lists containers and their CPU and memory through the local Docker socket. HeatLens never starts Docker, and can stop a container you select, after a confirmation."
+                     : "Lists containers and their CPU and memory through the local Docker socket, read-only. HeatLens never starts Docker or changes a container.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -147,19 +149,32 @@ private struct MonitoringSourcesSection: View {
     }
 }
 
-/// What HeatLens may do to a process, beyond reading it. Off by default.
+/// What HeatLens may do to a process or container, beyond reading it. Off by default.
 private struct ActionsSection: View {
     @Bindable var settings: SettingsModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Actions")
-                .font(.subheadline.weight(.semibold))
-            Toggle("Offer Force Quit when a process ignores a stop request", isOn: $settings.forceQuitEnabled)
-            Text("After a stop request that a process ignores, offers Force Quit (SIGKILL) behind a second confirmation. Off: HeatLens never sends anything stronger than SIGTERM.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Actions")
+                    .font(.subheadline.weight(.semibold))
+                Toggle("Offer Force Quit when a process ignores a stop request", isOn: $settings.forceQuitEnabled)
+                Text("After a stop request that a process ignores, offers Force Quit (SIGKILL) behind a second confirmation. Off: HeatLens never sends anything stronger than SIGTERM.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // Only while Docker is on; turning Docker off hides it and disables stopping (ADR-0007 decision 6).
+            if settings.dockerEnabled {
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Allow stopping a container", isOn: $settings.containerStopEnabled)
+                    Text("Adds a Stop button to a container's detail in scan results. Docker stops it the way `docker stop` does: a stop signal, then force after the container's timeout. Off: HeatLens only reads from Docker.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 18)
+            }
         }
     }
 }

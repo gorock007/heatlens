@@ -60,6 +60,12 @@ struct FixtureScanService: ScanService {
                             state: "running", status: "Up 40 seconds", createdAt: Date(timeIntervalSinceNow: -40),
                             labels: ["com.docker.compose.project": "demo", "com.docker.compose.service": "tests"],
                             cpuPercentOfOneCore: 212, memoryBytes: 900 << 20, vmCPUCount: 6),
+            // A Docker Desktop extension: its detail says why HeatLens never offers to stop it (ADR-0007 decision 5).
+            ContainerSample(containerID: String(repeating: "0d0e0f101112", count: 5) + "abcd", name: "desktop-extension-helper",
+                            image: "example/desktop-extension:1.0", state: "running", status: "Up 5 hours",
+                            createdAt: Date(timeIntervalSinceNow: -5 * 3_600),
+                            labels: ["com.docker.desktop.extension.api.version": "0.3.4"],
+                            cpuPercentOfOneCore: 0.4, memoryBytes: 24 << 20, vmCPUCount: 6),
             ContainerSample(containerID: String(repeating: "ffeeddccbbaa", count: 5) + "9876", name: "build-cache", image: "alpine",
                             state: "exited", status: "Exited (0) 2 days ago", createdAt: Date(timeIntervalSinceNow: -2 * 86_400),
                             labels: [:], cpuPercentOfOneCore: nil, memoryBytes: nil, vmCPUCount: nil),

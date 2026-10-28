@@ -26,9 +26,11 @@
     Scan now still includes them.
 11. Live mode keeps at most 150 updates of trend history in memory and forgets them when it
     stops. It pauses itself after 15 minutes and stops when the panel closes.
-12. Docker data needs "Docker containers" on in Settings, and only reads Docker Desktop's local
-    socket (or a `unix://` `DOCKER_HOST`). Colima, OrbStack and Podman are untested. At most 20
-    running containers get CPU and memory per reading.
+12. Docker data needs "Docker containers" on in Settings, and by default only reads Docker
+    Desktop's local socket (or a `unix://` `DOCKER_HOST`). Colima, OrbStack and Podman are
+    untested. At most 20 running containers get CPU and memory per reading. With "Allow stopping
+    a container" on, HeatLens can stop one selected container from a scan result, only through
+    Docker Desktop's own socket; a `DOCKER_HOST` socket stays read-only.
 13. Container CPU is part of the Docker VM process's CPU, not extra load. Don't add the two.
     Containers are not yet attributed to projects; Compose labels are shown as evidence only.
 14. Safari and other WebKit content processes run as Apple XPC services and are grouped with

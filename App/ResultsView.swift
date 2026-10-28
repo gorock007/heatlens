@@ -84,6 +84,7 @@ struct ResultsView: View {
     let report: ScanReport
     let settings: SettingsModel
     let stopService: any ProcessStopping
+    let containerStopService: any ContainerStopProviding
     /// The results before these, for "Since last scan"; nil after a relaunch or on the first scan.
     let previousReport: ScanReport?
     let stoppedSinceLastScan: Bool
@@ -95,6 +96,8 @@ struct ResultsView: View {
     @State private var selectedProcess: ProcessIdentity?
     @State private var stopTarget: StopTarget?
     @State private var batchTarget: ProjectLeftovers?
+    @State private var selectedContainer: ContainerSelection?
+    @State private var containerStopTarget: ContainerSelection?
 
     private var context: ReportContext {
         let visible = Set(visibleFindings.map(\.id))
@@ -112,6 +115,9 @@ struct ResultsView: View {
             if let selectedProcess {
                 ProcessDetailView(identity: selectedProcess, context: context, stopService: stopService,
                                   onBack: { self.selectedProcess = nil }, onRequestStop: { stopTarget = $0 })
+            } else if let selectedContainer {
+                ContainerDetailView(selection: selectedContainer, settings: settings,
+                                    onBack: { self.selectedContainer = nil }, onRequestStop: { containerStopTarget = $0 })
             } else {
                 resultList(context: context)
             }
@@ -123,6 +129,9 @@ struct ResultsView: View {
         .sheet(item: $batchTarget) { leftovers in
             BatchStopFlowView(leftovers: leftovers, context: context, settings: settings, stopService: stopService,
                               onScanAgain: onScanAgain, onStopped: onStopped)
+        }
+        .sheet(item: $containerStopTarget) { selection in
+            ContainerStopFlowView(selection: selection, settings: settings, onScanAgain: onScanAgain, onStopped: onStopped)
         }
     }
 
@@ -153,7 +162,7 @@ struct ResultsView: View {
                     HardwareCard(sample: hardware)
                 }
                 if let docker = report.docker {
-                    DockerCard(snapshot: docker)
+                    DockerCard(snapshot: docker, onInspect: inspectContainer, canStop: settings.canStopContainers)
                 }
 
                 if hiddenCount > 0 {
@@ -172,7 +181,7 @@ struct ResultsView: View {
                 }
 
                 if !report.projects.usages.isEmpty {
-                    ProjectsCard(breakdown: report.projects, groups: report.groups)
+                    ProjectsCard(breakdown: report.projects, groups: report.groups, onInspectContainer: inspectContainer)
                 }
 
                 ResultSection(title: "Potential leftovers") {
@@ -219,6 +228,15 @@ struct ResultsView: View {
             Button(stoppedSinceLastScan ? "Rescan to see the difference" : "Scan again", action: onScanAgain)
                 .keyboardShortcut(.defaultAction)
         }
+    }
+
+    /// Opens a container's detail, with the stopper Settings allow right now (ADR-0007 decision 6).
+    private func inspectContainer(_ container: ContainerSample) {
+        let enabled = containerStopService.isEnabled
+        selectedContainer = ContainerSelection(container: container,
+                                               attribution: report.projects.containerAttributions[container.containerID],
+                                               engineVersion: report.docker?.engineVersion, isStopEnabled: enabled,
+                                               stopper: containerStopService.stopper())
     }
 
     /// A stop offered on a finding card; the audit record files every card under `leftoverCard`.
@@ -899,6 +917,7 @@ enum Pasteboard {
     VStack(alignment: .leading, spacing: 12) {
         ResultsView(report: FixtureScanService.report(startedAt: Date(), interval: 10, processClock: firstScan, afterStop: true),
                     settings: SettingsModel(), stopService: FixtureStopService(),
+                    containerStopService: FixtureContainerStopService(enabled: { true }),
                     previousReport: FixtureScanService.report(startedAt: firstScan, interval: 10),
                     stoppedSinceLastScan: false, onScanAgain: {}, onStopped: {}, onDone: {})
     }

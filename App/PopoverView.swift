@@ -8,6 +8,7 @@ struct PopoverView: View {
     let model: ScanModel
     let live: LiveModel
     let stopService: any ProcessStopping
+    let containerStopService: any ContainerStopProviding
     @State private var showingSettings = false
     @State private var mode: Mode = .scan
 
@@ -41,6 +42,7 @@ struct PopoverView: View {
                     ScanningView(elapsed: elapsed, total: total) { model.cancel() }
                 case .results(let report):
                     ResultsView(report: report, settings: model.settings, stopService: stopService,
+                                containerStopService: containerStopService,
                                 previousReport: model.previousReport, stoppedSinceLastScan: model.stoppedSinceLastScan,
                                 onScanAgain: { model.startScan() }, onStopped: { model.recordStop() },
                                 onDone: { model.dismiss() })
@@ -157,5 +159,5 @@ private struct FailedView: View {
 #Preview("Idle") {
     let settings = SettingsModel()
     PopoverView(model: ScanModel(service: FixtureScanService(), settings: settings), live: LiveModel(settings: settings),
-                stopService: FixtureStopService())
+                stopService: FixtureStopService(), containerStopService: FixtureContainerStopService(enabled: { true }))
 }

@@ -67,6 +67,10 @@ struct DockerCard: View {
     let snapshot: DockerSnapshot?
     /// When set, the "Off" state offers a button that turns the switch on (Live mode).
     var onTurnOn: (() -> Void)? = nil
+    /// When set, each row opens the container's detail (scan results only; Live passes none).
+    var onInspect: ((ContainerSample) -> Void)? = nil
+    /// "Allow stopping a container" is on, so the badge no longer says "read-only".
+    var canStop = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -76,7 +80,7 @@ struct DockerCard: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 if let snapshot, snapshot.availability.isAvailable {
-                    SourceBadge(text: "Engine \(snapshot.engineVersion ?? "") · read-only", isPrivate: false)
+                    SourceBadge(text: "Engine \(snapshot.engineVersion ?? "")" + (canStop ? "" : " · read-only"), isPrivate: false)
                 }
             }
             if let snapshot {
@@ -96,6 +100,26 @@ struct DockerCard: View {
         }
     }
 
+    private func row(_ container: ContainerSample) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack {
+                Text(container.name)
+                    .font(.callout)
+                    .lineLimit(1)
+                Spacer()
+                Text(container.isRunning ? Format.cpu(container.cpuPercentOfOneCore) : container.state)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(([container.image] + [container.composeProject.map { "compose \($0)/\(container.composeService ?? "?")" }]
+                .compactMap { $0 } + [container.isRunning ? Format.bytes(container.memoryBytes) : nil].compactMap { $0 })
+                .joined(separator: " · "))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
     @ViewBuilder
     private func content(_ snapshot: DockerSnapshot) -> some View {
         if !snapshot.availability.isAvailable {
@@ -109,22 +133,21 @@ struct DockerCard: View {
                 .foregroundStyle(.secondary)
         } else {
             ForEach(snapshot.containers.prefix(8)) { container in
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack {
-                        Text(container.name)
-                            .font(.callout)
-                            .lineLimit(1)
-                        Spacer()
-                        Text(container.isRunning ? Format.cpu(container.cpuPercentOfOneCore) : container.state)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                if let onInspect {
+                    // The whole row inspects, like the Ports rows; the trailing word says so.
+                    Button { onInspect(container) } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            row(container)
+                            Text("Inspect")
+                                .font(.caption)
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    Text(([container.image] + [container.composeProject.map { "compose \($0)/\(container.composeService ?? "?")" }]
-                        .compactMap { $0 } + [container.isRunning ? Format.bytes(container.memoryBytes) : nil].compactMap { $0 })
-                        .joined(separator: " · "))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    .buttonStyle(.plain)
+                    .help("Inspect container")
+                } else {
+                    row(container)
                 }
             }
             if snapshot.containers.count > 8 {
