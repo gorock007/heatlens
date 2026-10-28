@@ -3,8 +3,8 @@ import Foundation
 /// CPU and memory of one project, the Docker VM's remainder, or everything unattributed
 /// (brief 2b). Host CPU is measured per process; container CPU comes from Docker stats and is
 /// *moved* out of the Docker VM row, so adding up every row never counts container work twice.
-public struct ProjectUsage: Identifiable, Hashable, Sendable {
-    public enum Bucket: Hashable, Sendable {
+public struct ProjectUsage: Identifiable, Hashable, Codable, Sendable {
+    public enum Bucket: Hashable, Codable, Sendable {
         case project(Project)
         /// Docker's VM process, minus the container CPU attributed to projects.
         case dockerVM
@@ -55,7 +55,7 @@ public struct ProjectUsage: Identifiable, Hashable, Sendable {
     public var totalCPUPercent: Double { (hostCPUPercent ?? 0) + (containerCPUPercent ?? 0) }
 }
 
-public struct ProjectBreakdown: Hashable, Sendable {
+public struct ProjectBreakdown: Hashable, Codable, Sendable {
     /// Projects busiest first, then the Docker VM row, then Unattributed. Empty rows are left out.
     public let usages: [ProjectUsage]
     /// How each container was (or wasn't) attributed, by container ID.

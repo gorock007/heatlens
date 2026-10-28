@@ -3,8 +3,8 @@ import Foundation
 /// One alert rule checked while Live runs (PRD-v2 Phase 3, brief 3c). It fires once when its value
 /// has stayed at or above `on` for `sustain`. It can't fire again until the value has stayed below
 /// `off` for `clear` and `cooldown` has passed since it last fired.
-public struct AlertRule: Hashable, Sendable {
-    public enum Kind: String, Hashable, Sendable, CaseIterable {
+public struct AlertRule: Hashable, Codable, Sendable {
+    public enum Kind: String, Hashable, Codable, Sendable, CaseIterable {
         /// All cores' busy fraction, 0...1 (`SystemSample.busyCores / coreCount`).
         case sustainedCPU
         /// Used memory, 0...1: 100 − `kern.memorystatus_level`, the kernel's available percentage.
@@ -101,8 +101,21 @@ public struct AlertRule: Hashable, Sendable {
     }
 }
 
+extension AlertRule {
+    /// Decodes through `init`, so a decoded rule is clamped as a built one is (`off` ≤ `on`, no
+    /// negative times).
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(kind: try container.decode(Kind.self, forKey: .kind), isEnabled: try container.decode(Bool.self, forKey: .isEnabled),
+                  on: try container.decode(Double.self, forKey: .on), off: try container.decode(Double.self, forKey: .off),
+                  sustain: try container.decode(TimeInterval.self, forKey: .sustain),
+                  clear: try container.decode(TimeInterval.self, forKey: .clear),
+                  cooldown: try container.decode(TimeInterval.self, forKey: .cooldown))
+    }
+}
+
 /// The user's alert settings, passed in through `LiveConfiguration`. Off unless turned on.
-public struct AlertConfiguration: Hashable, Sendable {
+public struct AlertConfiguration: Hashable, Codable, Sendable {
     /// "Alert me while Live is running": nothing is checked while this is off.
     public var isEnabled: Bool
     public var rules: [AlertRule]
@@ -120,9 +133,9 @@ public struct AlertConfiguration: Hashable, Sendable {
 }
 
 /// One alert that fired on a Live tick. Names only: no paths, no argv.
-public struct Alert: Hashable, Sendable, Identifiable {
+public struct Alert: Hashable, Codable, Sendable, Identifiable {
     /// The watch a project alert came from: names and a hash, never the folder.
-    public struct Watch: Hashable, Sendable {
+    public struct Watch: Hashable, Codable, Sendable {
         public let projectName: String
         public let metric: ProjectWatch.Metric
         /// `ProjectWatch.hash(of:)` of the project's ID, for a stable notification identifier.

@@ -58,7 +58,7 @@ public struct LiveConfiguration: Sendable {
 
 /// One live update: the interval since the previous tick, as a normal `ScanSnapshot`, plus
 /// hardware, Docker, top lists and their trends.
-public struct LiveTick: Sendable {
+public struct LiveTick: Codable, Sendable {
     public let sequence: Int
     public let snapshot: ScanSnapshot
     public let groups: [ProcessGroup]
@@ -334,7 +334,7 @@ public actor LiveMonitor {
 /// and memory. Compact storage (Float, KiB) keeps ~800 processes × 150 ticks near 1 MB.
 /// Dropped when the session stops; persistence is Phase 2's history store.
 public struct LiveHistory: Sendable {
-    public struct Window: Sendable {
+    public struct Window: Codable, Sendable {
         public let timestamps: [Date]
         /// 0...1 of all cores.
         public let hostBusy: [Double?]

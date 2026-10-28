@@ -2,7 +2,7 @@ import Foundation
 
 /// The machine at one live tick, as the history keeps it (brief 2c). Rolled-up points are
 /// one-minute aggregates: averages for load and power, maxima for heat, swap and pressure.
-public struct HistoryPoint: Hashable, Sendable {
+public struct HistoryPoint: Hashable, Codable, Sendable {
     public let timestamp: Date
     public let thermalState: ThermalState
     /// 0...1 of all cores (the minute's average when rolled up).
@@ -36,7 +36,7 @@ public struct HistoryPoint: Hashable, Sendable {
 
 /// One project's share at one tick (or one minute). Only names and folders are kept, never
 /// command lines.
-public struct HistoryProjectPoint: Hashable, Sendable {
+public struct HistoryProjectPoint: Hashable, Codable, Sendable {
     public let timestamp: Date
     /// `Project.id` (the lowercased root), "docker-vm" or "unattributed".
     public let projectID: String
@@ -60,8 +60,8 @@ public struct HistoryProjectPoint: Hashable, Sendable {
 
 /// Something notable on the timeline (briefs 2d, 2e). `isInference` marks HeatLens's
 /// interpretation ("three expensive commands at once") as opposed to an observation.
-public struct TimelineEvent: Hashable, Sendable, Identifiable {
-    public enum Kind: String, Hashable, Sendable, CaseIterable {
+public struct TimelineEvent: Hashable, Codable, Sendable, Identifiable {
+    public enum Kind: String, Hashable, Codable, Sendable, CaseIterable {
         case thermalChanged
         case containerStarted
         case containerStopped
@@ -93,7 +93,7 @@ public struct TimelineEvent: Hashable, Sendable, Identifiable {
 }
 
 /// What the timeline reads back.
-public struct HistoryWindow: Hashable, Sendable {
+public struct HistoryWindow: Hashable, Codable, Sendable {
     public let points: [HistoryPoint]
     public let projects: [HistoryProjectPoint]
     public let events: [TimelineEvent]

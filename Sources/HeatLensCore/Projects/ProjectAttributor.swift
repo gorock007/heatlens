@@ -20,7 +20,7 @@ public struct Project: Identifiable, Hashable, Codable, Sendable {
 
 /// A user-defined "this directory is that project" line from Settings: `~/Developer/FDA = FDA`.
 /// Data only; matched by path prefix on whole components.
-public struct ProjectMapping: Hashable, Sendable {
+public struct ProjectMapping: Hashable, Codable, Sendable {
     public let root: String
     public let name: String
 
@@ -52,7 +52,7 @@ public struct ProjectMapping: Hashable, Sendable {
 }
 
 /// How one container was tied to a project, or why it wasn't.
-public struct ContainerAttribution: Hashable, Sendable {
+public struct ContainerAttribution: Hashable, Codable, Sendable {
     public let containerID: String
     public let project: Project?
     public let evidence: Evidence
