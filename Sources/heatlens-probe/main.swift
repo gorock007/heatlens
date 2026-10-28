@@ -9,7 +9,9 @@ import HeatLensCore
 // --report (print the redacted text report the app copies, from the same ScanPipeline, and exit),
 // --sensors [--samples <n>] (print hardware sensor readings once a second, n times, default 3, and exit),
 // --docker (read the local Docker Engine twice, `--duration` apart, print containers, and exit),
-// --live <seconds> [--interval <2…10>] (run a live session with sensors and Docker, print each tick's cost, and exit).
+// --live <seconds> [--interval <2…10>] (run a live session with sensors and Docker, print each tick's cost, and exit),
+// --background <seconds> [--assume-battery | --assume-low-power] (run an adaptive session with nobody looking, print each
+// tick's interval, reason and cost, and exit).
 
 var duration: Double = 5
 var useFixtures = true
@@ -20,6 +22,8 @@ var sensorSamples = 3
 var dockerMode = false
 var liveSeconds: Double?
 var liveInterval: Double = 5
+var backgroundSeconds: Double?
+var assumedPower = AssumedPower.measured
 do {
     var it = CommandLine.arguments.dropFirst().makeIterator()
     while let a = it.next() {
@@ -32,6 +36,9 @@ do {
         case "--docker": dockerMode = true
         case "--live": liveSeconds = Double(it.next() ?? "") ?? 60
         case "--interval": liveInterval = Double(it.next() ?? "") ?? liveInterval
+        case "--background": backgroundSeconds = Double(it.next() ?? "") ?? 900
+        case "--assume-battery": assumedPower = .battery
+        case "--assume-low-power": assumedPower = .lowPowerMode
         case "--samples": sensorSamples = max(1, Int(it.next() ?? "") ?? sensorSamples)
         default: print("unknown flag \(a)"); exit(2)
         }
@@ -40,6 +47,10 @@ do {
 
 if sensorsMode {
     printSensors(samples: sensorSamples)
+    exit(0)
+}
+if let backgroundSeconds {
+    await runBackground(seconds: backgroundSeconds, power: assumedPower)
     exit(0)
 }
 if let liveSeconds {

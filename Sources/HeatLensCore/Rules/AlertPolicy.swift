@@ -150,11 +150,14 @@ public struct Alert: Hashable, Sendable, Identifiable {
 /// Checks `AlertConfiguration` against Live ticks, fed one at a time like `TimelineDetector`.
 /// Holds no timer: it only looks at the ticks it's given, so nothing is checked when Live isn't
 /// running. A tick that doesn't start where the previous one ended (a pause, a new session)
-/// resets the hold and clear timers, so a rule never fires on time it didn't see. The cooldown
-/// is kept across pauses, for as long as the evaluator lives.
+/// resets the hold and clear timers, so a rule never fires on time it didn't see. So does a tick
+/// lasting more than `sleepFactor` × its planned interval (the Mac slept), and its timers then
+/// start at the tick's end. The cooldown is kept across both, for as long as the evaluator lives.
 public struct AlertEvaluator: Sendable {
     /// Ticks within this of each other count as back to back.
     public static let gapTolerance: TimeInterval = 1
+    /// A tick longer than this many planned intervals slept through (docs/v2/PHASE-4-PLAN.md 4a).
+    public static let sleepFactor: Double = 3
     /// Project names per alert.
     public static let projectLimit = 3
     static let nameLimit = 40
@@ -182,12 +185,27 @@ public struct AlertEvaluator: Sendable {
         self.configuration = configuration
     }
 
+    /// True while an enabled rule is holding (at or above `on`) or has fired and not yet cleared.
+    /// `IncidentTracker` treats that as an incident.
+    public var isActive: Bool {
+        guard configuration.isEnabled else { return false }
+        return configuration.rules.contains { rule in
+            guard rule.isEnabled, let state = states[rule.kind] else { return false }
+            return state.holdingSince != nil || !state.armed
+        }
+    }
+
     /// The alerts that fired on this tick.
     public mutating func alerts(for tick: LiveTick) -> [Alert] {
-        let start = tick.snapshot.startedAt
+        var start = tick.snapshot.startedAt
         let end = start.addingTimeInterval(tick.snapshot.interval)
         if let lastEnd, abs(start.timeIntervalSince(lastEnd)) > Self.gapTolerance {
             for kind in states.keys { states[kind]?.resetTimers() }
+        }
+        if let planned = tick.plannedInterval, tick.snapshot.interval > Self.sleepFactor * planned {
+            for kind in states.keys { states[kind]?.resetTimers() }
+            // The value wasn't seen while the Mac slept: holding and clearing start now.
+            start = end
         }
         lastEnd = end
         guard configuration.isEnabled else {

@@ -76,6 +76,34 @@ private func names(_ stream: AsyncStream<LiveEvent>) async -> [String] {
     return result
 }
 
+/// Records every wait the session asks for, and returns at once.
+private final class SleepRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [TimeInterval] = []
+
+    var sleeps: [TimeInterval] { lock.withLock { recorded } }
+
+    var sleep: @Sendable (TimeInterval) async throws -> Void {
+        { [self] seconds in
+            lock.withLock { recorded.append(seconds) }
+            await Task.yield()
+        }
+    }
+}
+
+/// No sensors, and the power context the test picks (nil: unreadable).
+private struct FixedPowerHardware: HardwareSensorProviding {
+    let power: PowerContext?
+
+    func sample() -> HardwareSample {
+        HardwareSampleAssembly.sample(smc: nil, smcAvailability: .disabled, power: power)
+    }
+}
+
+private func power(_ source: PowerSourceKind, lowPower: Bool = false) -> PowerContext {
+    PowerContext(source: source, hasBattery: source != .ac, batteryPercent: 50, isCharging: nil, lowPowerMode: lowPower)
+}
+
 private func eventually(_ condition: @Sendable () async -> Bool) async -> Bool {
     for _ in 0..<100 {
         if await condition() { return true }
@@ -313,6 +341,95 @@ struct LiveMonitorTests {
         #expect(firstEvents <= 2)
         #expect(await ticks(second, count: 1).count == 1)
         await live.stop()
+    }
+
+    @Test(".fixed (the default) waits as before: warm-up, then the interval, and setInterval changes it")
+    func fixedSleeps() async {
+        let recorder = SleepRecorder()
+        let live = monitor(ScriptedProcessSampler { call in [reading(10, cpuSeconds: Double(call))] }, sleep: recorder.sleep)
+        let configuration = LiveConfiguration(hardware: FixedPowerHardware(power: power(.battery, lowPower: true)))
+        #expect(configuration.sampling == .fixed(5))
+        let got = await ticks(await live.start(configuration), count: 4)
+        await live.stop()
+        #expect(Array(recorder.sleeps.prefix(4)) == [1, 5, 5, 5])
+        #expect(got.map(\.plannedInterval) == [1, 5, 5, 5])
+        #expect(got.allSatisfy { $0.sampling == SamplingPolicy.Decision(interval: 5, reason: .fixed) })
+        await live.setInterval(2)
+        let next = await ticks(await live.start(LiveConfiguration(interval: 10)), count: 2)
+        await live.stop()
+        #expect(next.map(\.sampling?.interval) == [10, 10])
+    }
+
+    @Test("An adaptive session with nobody looking waits as the policy says for each power source")
+    func adaptiveIdle() async {
+        let cases: [(PowerContext?, TimeInterval, SamplingPolicy.Reason)] = [
+            (power(.ac), 30, .idle), (power(.battery), 60, .battery), (power(.unknown), 60, .battery), (nil, 60, .battery),
+            (power(.ac, lowPower: true), 120, .lowPowerMode),
+        ]
+        for (power, interval, reason) in cases {
+            let recorder = SleepRecorder()
+            let live = monitor(ScriptedProcessSampler { call in [reading(10, cpuSeconds: Double(call) * 0.01)] }, sleep: recorder.sleep)
+            let got = await ticks(await live.start(LiveConfiguration(sampling: .adaptive, hardware: FixedPowerHardware(power: power),
+                                                                     autoPauseAfter: nil)), count: 3)
+            await live.stop()
+            #expect(Array(recorder.sleeps.prefix(3)) == [1, interval, interval], "\(reason)")
+            #expect(got.map(\.plannedInterval) == [1, interval, interval])
+            #expect(got.allSatisfy { $0.sampling == SamplingPolicy.Decision(interval: interval, reason: reason) })
+        }
+    }
+
+    @Test("A test run starting mid-session switches to the incident cadence, and Low Power Mode stays slow")
+    func adaptiveIncident() async {
+        let vitestStart = Int64(ScriptedProcessSampler.base.timeIntervalSince1970 * 1_000_000) + 2_500_000
+        let script: @Sendable (Int) -> [ProcessReading] = { call in
+            var list = [reading(10, cpuSeconds: Double(call) * 0.01)]
+            if call >= 3 {
+                list.append(ProcessReading(identity: ProcessIdentity(pid: 77, startTimeMicros: vitestStart), parentPID: 1, owner: .currentUser,
+                                           name: "node", arguments: ["node", "/Users/someone/Developer/app/node_modules/.bin/vitest", "run"],
+                                           cpu: CPUTime(userNanoseconds: UInt64(call) * 10_000_000, systemNanoseconds: 0), detailAccess: .available))
+            }
+            return list
+        }
+        let cases: [(PowerContext, [TimeInterval])] = [
+            (power(.ac), [1, 30, 5, 5, 5]), (power(.battery), [1, 60, 10, 10, 10]), (power(.ac, lowPower: true), [1, 120, 120, 120, 120]),
+        ]
+        for (power, expected) in cases {
+            let recorder = SleepRecorder()
+            let live = monitor(ScriptedProcessSampler(script: script), sleep: recorder.sleep)
+            let got = await ticks(await live.start(LiveConfiguration(sampling: .adaptive, hardware: FixedPowerHardware(power: power),
+                                                                     autoPauseAfter: nil)), count: 5)
+            await live.stop()
+            #expect(got[1].events.map(\.kind) == [.testRunStarted])
+            #expect(Array(recorder.sleeps.prefix(5)) == expected)
+        }
+    }
+
+    @Test("A viewer gets the panel's interval, kept across sessions, until it leaves")
+    func adaptiveViewer() async {
+        let recorder = SleepRecorder()
+        let live = monitor(ScriptedProcessSampler { call in [reading(10, cpuSeconds: Double(call) * 0.01)] }, sleep: recorder.sleep)
+        let configuration = LiveConfiguration(sampling: .adaptive, hardware: FixedPowerHardware(power: power(.battery, lowPower: true)),
+                                              autoPauseAfter: nil)
+        await live.setViewer(interval: 0.5)
+        let viewed = await ticks(await live.start(configuration), count: 2)
+        await live.stop()
+        #expect(viewed.map(\.sampling) == Array(repeating: SamplingPolicy.Decision(interval: 2, reason: .viewer), count: 2))
+        await live.setInterval(10)
+        let picked = await ticks(await live.start(configuration), count: 2)
+        await live.stop()
+        #expect(picked.map(\.sampling?.interval) == [10, 10])
+        await live.setViewer(interval: nil)
+        let left = await ticks(await live.start(configuration), count: 2)
+        await live.stop()
+        #expect(left.map(\.sampling) == Array(repeating: SamplingPolicy.Decision(interval: 120, reason: .lowPowerMode), count: 2))
+    }
+
+    @Test("autoPauseAfter nil never pauses")
+    func noAutoPause() async {
+        let live = monitor(ScriptedProcessSampler { _ in [reading(10, cpuSeconds: 1)] })
+        let got = await ticks(await live.start(LiveConfiguration(autoPauseAfter: nil)), count: 5)
+        await live.stop()
+        #expect(got.count == 5)
     }
 
     @Test("Intervals clamp to 2…10 s")

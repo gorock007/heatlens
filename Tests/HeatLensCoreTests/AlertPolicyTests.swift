@@ -217,6 +217,88 @@ struct AlertPolicyTests {
         #expect(cpu.0 >= 120 && cpu.0 < 120 + step + 0.3)
     }
 
+    @Test("a tick over 3× its planned interval (the Mac slept) resets holding and can't fire on time asleep")
+    func sleepGapResetsHolding() {
+        // Background cadence: 30 s ticks, back to back. Swap fires after 60 s.
+        func run(_ spans: [TimeInterval], planned: TimeInterval = 30) -> [Int] {
+            var evaluator = AlertEvaluator(configuration: allOn)
+            var start = t0
+            var fired: [Int] = []
+            for (n, span) in spans.enumerated() {
+                var t = tick(n, AlertReading(swap: 3 * gib), start: start, interval: span)
+                t.plannedInterval = planned
+                if !evaluator.alerts(for: t).isEmpty { fired.append(n) }
+                start = start.addingTimeInterval(span)
+            }
+            return fired
+        }
+        // Awake: fires on the second tick, at 60 s.
+        #expect(run([30, 30, 30]) == [1])
+        // An hour asleep after the first tick: the hold restarts at wake, so 60 s more are needed.
+        #expect(run([30, 3600, 30, 30]) == [3])
+        // Exactly 3× is a slow tick, not sleep.
+        #expect(run([30, 90]) == [1])
+        // Ticks not made by LiveMonitor (no planned interval) never count as sleep.
+        var evaluator = AlertEvaluator(configuration: allOn)
+        let long = tick(0, AlertReading(swap: 3 * gib), start: t0, interval: 3600)
+        #expect(evaluator.alerts(for: long).map(\.rule) == [.swap])
+    }
+
+    @Test("sleep resets clearing too: time asleep doesn't clear a fired rule; the cooldown is kept")
+    func sleepGapResetsClearing() {
+        var evaluator = AlertEvaluator(configuration: AlertConfiguration(isEnabled: true, rules: [AlertRule.sustainedCPU]))
+        let hot = AlertReading(cpu: 0.95), cool = AlertReading(cpu: 0.2)
+        var start = t0
+        func feed(_ reading: AlertReading, span: TimeInterval = 30) -> [Alert] {
+            var t = tick(0, reading, start: start, interval: span)
+            t.plannedInterval = 30
+            start = start.addingTimeInterval(span)
+            return evaluator.alerts(for: t)
+        }
+        #expect(feed(hot).isEmpty)
+        #expect(feed(hot).isEmpty)
+        #expect(feed(hot).isEmpty)
+        #expect(feed(hot).count == 1)
+        #expect(evaluator.isActive)
+        #expect(feed(cool).isEmpty)
+        // Asleep for an hour while cool: clearing (60 s) restarts at wake.
+        #expect(feed(cool, span: 3600).isEmpty)
+        #expect(evaluator.isActive)
+        #expect(feed(cool).isEmpty)
+        #expect(evaluator.isActive)
+        #expect(feed(cool).isEmpty)
+        #expect(!evaluator.isActive)
+        // Re-armed, and the 15-minute cooldown (counted from the firing, before the sleep) has passed.
+        #expect(feed(hot).isEmpty)
+        #expect(evaluator.isActive)
+        #expect(feed(hot).isEmpty)
+        #expect(feed(hot).isEmpty)
+        #expect(feed(hot).count == 1)
+    }
+
+    @Test("isActive: a rule holding or fired and not yet cleared; never while alerts or the rule are off")
+    func isActive() {
+        var evaluator = AlertEvaluator(configuration: allOn)
+        #expect(!evaluator.isActive)
+        _ = feed(&evaluator, 0..<1, AlertReading())
+        #expect(!evaluator.isActive)
+        _ = feed(&evaluator, 1..<2, AlertReading(cpu: 0.95))
+        #expect(evaluator.isActive)
+        var rules = allOn.rules
+        rules[rules.firstIndex { $0.kind == .sustainedCPU }!].isEnabled = false
+        evaluator.configuration = AlertConfiguration(isEnabled: true, rules: rules)
+        #expect(!evaluator.isActive)
+        evaluator.configuration = allOn
+        _ = feed(&evaluator, 2..<(2 + ticks(AlertRule.swap.sustain)), AlertReading(swap: 3 * gib))
+        #expect(evaluator.isActive)
+        evaluator.configuration = .off
+        #expect(!evaluator.isActive)
+        evaluator.configuration = allOn
+        // Swap clears at once below 1 GB.
+        _ = feed(&evaluator, 100..<101, AlertReading())
+        #expect(!evaluator.isActive)
+    }
+
     @Test("a gap resets clearing too, but the cooldown carries across it")
     func gapKeepsCooldown() {
         var evaluator = AlertEvaluator(configuration: allOn)

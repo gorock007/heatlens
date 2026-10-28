@@ -113,6 +113,35 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
       96–101 ms. Detection on 1,000 processes is under 10 ms per tick (a test), because each
       process is classified once. History writes are under 0.1 ms per tick (ADR-0005).
 
+9. **Adaptive sampling** (2026-10-28, PRD-v2 brief 4a; budgets in docs/v2/ADR-0008 §6: ≤ 0.3% of
+   one core idle on power, ≤ 0.1% in Low Power Mode, ≤ 2% during an incident). Release build,
+   `--background` runs an adaptive session with nobody looking, hardware sensors and Docker on,
+   about 800 processes, on power. Other builds and test runs were going on the same Mac during
+   both runs (host 37–100% busy, median 60%).
+
+   | Command | Wall | CPU (user + sys) | Average | Intervals | Per tick | Peak footprint |
+   |---|---|---|---|---|---|---|
+   | `/usr/bin/time -l .build/release/heatlens-probe --background 900` | 904.6 s | 11.21 s | 1.24% of one core | all 173 planned 5 s (incident); median span 5.2 s | median 104.7 ms, max 1,513 ms | 20.6 MB |
+   | `/usr/bin/time -l .build/release/heatlens-probe --background 400 --assume-low-power` | 426.3 s | 0.32 s | 0.075% of one core | all 4 planned 120 s (Low Power Mode); median span 127.3 s | median 106.2 ms, max 163.6 ms | 12.4 MB |
+
+   1. **The idle-on-power target was not measured.** The Mac was never idle: half the ticks had
+      all cores at least 60% busy, and the run saw 24 expensive-command and 8 test-run starts.
+      Each of those is an incident trigger, so every interval was the incident cadence (5 s on
+      power). That run does show the incident case, and it is within its ≤ 2% budget.
+      Per-tick CPU there was about 65 ms (11.21 s / 173 ticks). At 30 s that would be about 0.22%
+      of one core, but that is an extrapolation, not a measurement. To measure it, run the
+      900 s command again on a quiet Mac: the summary line should read `reasons idle …` with a
+      median span near 30 s.
+   2. Low Power Mode is within its ≤ 0.1% budget, and it stayed at 120 s while the Mac was busy:
+      Low Power Mode is never fast.
+   3. Spans run longer than planned: 5.1–5.5 s for 5 s, and 126.7–128.2 s for 120 s.
+      `Task.sleep` lets macOS add slack to long timers so it can wake less often (about 6% at
+      120 s here), and the span also includes the tick's own collection time. The sleep check
+      (a span over 3× the plan resets alert timers) has plenty of room for both.
+   4. The 1.5 s tick in the 900 s run is a single outlier. It came while the other work kept
+      the cores busy, and this run doesn't show what caused it. The next-slowest tick took
+      522 ms.
+
 ## 3. Snapshot cost
 
 No test or probe output prints the cost of building a snapshot, rules and report on their own,

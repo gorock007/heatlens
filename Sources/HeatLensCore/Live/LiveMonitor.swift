@@ -8,12 +8,15 @@ public struct LiveConfiguration: Sendable {
     /// The gap before the first tick, so the first numbers appear quickly.
     public static let warmUp: TimeInterval = 1
 
+    /// The panel's picker, clamped to 2...10 s; the default `sampling` waits this long.
     public var interval: TimeInterval
+    /// How long each wait is (docs/v2/PHASE-4-PLAN.md 4a). `.fixed(interval)` unless asked otherwise.
+    public var sampling: SamplingPolicy.Mode
     public var hardware: any HardwareSensorProviding
     public var docker: any DockerSampling
     public var userRules: [WorkloadRule]
-    /// The session ends itself after this long, so a forgotten panel can't sample forever.
-    public var autoPauseAfter: TimeInterval
+    /// The session ends itself after this long, so a forgotten panel can't sample forever. Nil never pauses.
+    public var autoPauseAfter: TimeInterval?
     /// Ticks of trend history kept in memory (150 × 5 s = 12.5 minutes).
     public var historyCapacity: Int
     /// Processes per top list, each with a trend.
@@ -27,12 +30,14 @@ public struct LiveConfiguration: Sendable {
     /// The user's alert rules (brief 3c); off unless turned on in Settings.
     public var alerts: AlertConfiguration
 
-    public init(interval: TimeInterval = 5, hardware: any HardwareSensorProviding = DisabledHardwareProvider(),
+    public init(interval: TimeInterval = 5, sampling: SamplingPolicy.Mode? = nil,
+                hardware: any HardwareSensorProviding = DisabledHardwareProvider(),
                 docker: any DockerSampling = DisabledDockerSampler(), userRules: [WorkloadRule] = [],
-                autoPauseAfter: TimeInterval = 15 * 60, historyCapacity: Int = 150, topCount: Int = 12,
+                autoPauseAfter: TimeInterval? = 15 * 60, historyCapacity: Int = 150, topCount: Int = 12,
                 projectLocator: ProjectRootLocator? = nil, projectMappings: [ProjectMapping] = [],
                 history: HistoryStore? = nil, alerts: AlertConfiguration = .off) {
         self.interval = Self.clamped(interval)
+        self.sampling = sampling ?? .fixed(self.interval)
         self.hardware = hardware
         self.docker = docker
         self.userRules = userRules
@@ -77,6 +82,11 @@ public struct LiveTick: Sendable {
     public var explanations: [Explanation] = []
     /// Alerts that fired on this tick (brief 3c); empty on most ticks.
     public var alerts: [Alert] = []
+    /// The wait planned before this tick (warm-up for the first). Nil on ticks not made by
+    /// `LiveMonitor`. A span over 3× this means the Mac slept (`AlertEvaluator`).
+    public var plannedInterval: TimeInterval? = nil
+    /// The wait planned after this tick, and why (`SamplingPolicy`).
+    public var sampling: SamplingPolicy.Decision? = nil
     /// This session's timeline so far, in memory: points, busiest projects and events, bounded
     /// like the trend ring.
     public var timeline: HistoryWindow = .empty
@@ -101,7 +111,9 @@ public actor LiveMonitor {
     private var session: Task<Void, Never>?
     private var sleeper: Task<Void, Error>?
     private var continuation: AsyncStream<LiveEvent>.Continuation?
-    private var interval: TimeInterval = 5
+    private var mode: SamplingPolicy.Mode = .fixed(5)
+    /// Set while someone is looking at Live; only `.adaptive` reads it. Kept across sessions.
+    private var viewerInterval: TimeInterval?
     private var sessionID = 0
     /// Outlives a session, so an alert's cooldown holds across Pause and Start. In memory only.
     private var alertEvaluator = AlertEvaluator()
@@ -127,7 +139,7 @@ public actor LiveMonitor {
         stop()
         sessionID += 1
         let id = sessionID
-        interval = configuration.interval
+        mode = configuration.sampling
         let (stream, continuation) = AsyncStream<LiveEvent>.makeStream(bufferingPolicy: .bufferingNewest(2))
         self.continuation = continuation
         continuation.onTermination = { [weak self] _ in
@@ -153,9 +165,23 @@ public actor LiveMonitor {
         sleeper?.cancel()
     }
 
-    /// Takes effect from the next wait.
+    /// The panel's picker changed. Takes effect from the next wait: `.fixed` waits this long,
+    /// and an attached viewer gets it.
     public func setInterval(_ newValue: TimeInterval) {
-        interval = LiveConfiguration.clamped(newValue)
+        let interval = LiveConfiguration.clamped(newValue)
+        if case .fixed = mode { mode = .fixed(interval) }
+        if viewerInterval != nil { viewerInterval = interval }
+    }
+
+    /// Someone started (an interval, clamped to 2...10 s) or stopped (nil) looking at Live. Only
+    /// `.adaptive` reads it, from the next wait; call `refreshNow()` to tick at once.
+    public func setViewer(interval newValue: TimeInterval?) {
+        viewerInterval = newValue.map(LiveConfiguration.clamped)
+    }
+
+    /// The next wait under the session's mode.
+    private func decision(power: PowerContext?, incident: Bool) -> SamplingPolicy.Decision {
+        SamplingPolicy.next(mode, SamplingPolicy.Context(viewerInterval: viewerInterval, power: power, incident: incident))
     }
 
     /// Alert settings changed while a session runs; takes effect from the next tick. Hold and
@@ -191,12 +217,14 @@ public actor LiveMonitor {
         var detector = TimelineDetector()
         var concurrency = ConcurrencyRules()
         alertEvaluator.configuration = configuration.alerts
+        var incidents = IncidentTracker()
+        var planned = LiveConfiguration.warmUp
         var timeline = (points: [HistoryPoint](), projects: [HistoryProjectPoint](), events: [TimelineEvent]())
         do {
             var previousProcesses = try processSampler.snapshot()
             var previousHost = systemSampler.counters()
             var previousDocker: DockerReading? = configuration.docker.reading()
-            try await wait(LiveConfiguration.warmUp)
+            try await wait(planned)
             while !Task.isCancelled {
                 let began = ContinuousClock.now
                 let host = systemSampler.counters()
@@ -226,8 +254,11 @@ public actor LiveMonitor {
                 let explained = concurrency.explanations(for: tick)
                 tick.explanations = concurrency.current
                 tick.events += explained.map { $0.timelineEvent(at: snapshot.startedAt.addingTimeInterval(snapshot.interval)) }
+                tick.plannedInterval = planned
                 tick.alerts = alertEvaluator.alerts(for: tick)
                 tick.events += tick.alerts.map(\.timelineEvent)
+                let incident = incidents.update(tick, alertsActive: alertEvaluator.isActive)
+                tick.sampling = decision(power: hardware.power, incident: incident)
                 let point = HistoryRecorder.point(from: tick)
                 let projectPoints = HistoryRecorder.projectPoints(from: tick)
                 timeline.points.append(point)
@@ -254,13 +285,15 @@ public actor LiveMonitor {
                 previousHost = host
                 previousDocker = dockerReading
 
-                if Self.seconds(startedAt.duration(to: .now)) >= configuration.autoPauseAfter {
+                if let limit = configuration.autoPauseAfter, Self.seconds(startedAt.duration(to: .now)) >= limit {
                     emit(.autoPaused, session: id)
                     stop(session: id)
                     return
                 }
                 // A full interval after the tick finished: a slow tick delays the next one, never queues it.
-                try await wait(interval)
+                // Decided again here, so a picker or viewer change during the history write counts.
+                planned = decision(power: hardware.power, incident: incident).interval
+                try await wait(planned)
             }
         } catch is CancellationError {
             return
