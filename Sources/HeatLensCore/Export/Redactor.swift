@@ -158,8 +158,16 @@ public enum Redactor {
     /// where the percentage is the share of all `coreCount` cores. Left out when there are no rows.
     private static func projectLines(_ rows: [RedactedProjectUsage], coreCount: Int) -> [String] {
         guard !rows.isEmpty else { return [] }
-        let projects = rows.filter { $0.kind == "project" }
-        let listed = projects.prefix(textProjectLimit) + rows.filter { $0.kind != "project" }
+        func isIdle(_ row: RedactedProjectUsage) -> Bool {
+            guard let cpuPercent = row.cpuPercent else { return true }
+            return cpuPercent < 5
+        }
+        let idleCount = rows.filter(isIdle).count
+        let nonIdle = rows.filter { !isIdle($0) }
+        guard !nonIdle.isEmpty else { return [] }
+        let projects = nonIdle.filter { $0.kind == "project" }
+        let others = nonIdle.filter { $0.kind != "project" }
+        let listed = Array(projects.prefix(textProjectLimit)) + others
         var lines = ["Projects:"]
         for row in listed {
             var parts: [String] = []
@@ -180,6 +188,9 @@ public enum Redactor {
         }
         if projects.count > textProjectLimit {
             lines.insert("and \(projects.count - textProjectLimit) more projects; Copy JSON for the full list", at: textProjectLimit + 1)
+        }
+        if idleCount > 0 {
+            lines.append("\(idleCount) idle project\(idleCount == 1 ? "" : "s") not shown; Copy JSON for the full list")
         }
         return lines
     }

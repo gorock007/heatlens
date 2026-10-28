@@ -298,8 +298,16 @@ struct RedactorProjectTests {
     static func projectSection(_ text: String) -> [String] {
         let lines = text.split(separator: "\n").map(String.init)
         guard let start = lines.firstIndex(of: "Projects:") else { return [] }
-        let rest = lines[(start + 1)...]
-        return Array(rest.prefix { $0.hasPrefix("- ") || $0.hasPrefix("and ") })
+        let rest = Array(lines[(start + 1)...])
+        var result: [String] = []
+        for line in rest {
+            if line.hasPrefix("- ") || line.hasPrefix("and ") || line.contains("idle project") {
+                result.append(line)
+                continue
+            }
+            break
+        }
+        return result
     }
 
     static let breakdown = ProjectBreakdown(usages: [
@@ -318,13 +326,13 @@ struct RedactorProjectTests {
         let section = Self.projectSection(text)
         #expect(section == [
             "- my-app: 2.1 cores (19%), \(Self.bytes(1_500 << 20)) + \(Self.bytes(400 << 20)) in Docker, 12 processes, 2 containers",
-            "- <user>-api: 0.0 cores (0%), \(Self.bytes(64 << 20)), 1 process",
             "- Docker VM: 0.5 cores (5%), \(Self.bytes(2 << 30)), 1 process",
             "- Unattributed: 0.2 cores (2%), \(Self.bytes(3 << 30)), 40 processes",
+            "1 idle project not shown; Copy JSON for the full list",
         ])
         let lines = text.split(separator: "\n").map(String.init)
         #expect(lines.firstIndex(of: "Projects:") == lines.firstIndex { $0.hasPrefix("System:") }.map { $0 + 1 })
-        for line in section { #expect(!line.contains("/"), "\(line)") }
+        for line in section where line.hasPrefix("- ") { #expect(!line.contains("/"), "\(line)") }
 
         let json = try Redactor.jsonReport(snapshot, groups: [], findings: [], projects: Self.breakdown, homeDirectory: Self.home)
         let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
@@ -359,7 +367,7 @@ struct RedactorProjectTests {
         #expect(section.count == Redactor.textProjectLimit + 2)
         #expect(section.prefix(Redactor.textProjectLimit).map { String($0.prefix(5)) } == (0..<8).map { "- p\($0):" })
         #expect(section[Redactor.textProjectLimit] == "and 3 more projects; Copy JSON for the full list")
-        #expect(section.last?.hasPrefix("- Unattributed:") == true)
+        #expect(section.contains("1 idle project not shown; Copy JSON for the full list"))
     }
 
     @Test("An empty breakdown leaves the section and the JSON rows out")
@@ -370,5 +378,56 @@ struct RedactorProjectTests {
         let json = try Redactor.jsonReport(snapshot, groups: [], findings: [], homeDirectory: Self.home)
         let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
         #expect((object["projects"] as? [Any])?.isEmpty == true)
+    }
+
+    @Test("Idle projects are hidden in text report")
+    func hidesIdleProjects() {
+        let busy = Self.project("busy-app", root: Self.home + "/Developer/busy-app", cpu: 200, memory: 1_000 << 20, processes: 5, from: 100)
+        let idleOne = Self.project("idle1", root: Self.home + "/Developer/idle1", cpu: 2, memory: 64 << 20, processes: 1, from: 200)
+        let idleTwo = Self.project("idle2", root: Self.home + "/Developer/idle2", cpu: nil, memory: 32 << 20, processes: 1, from: 300)
+        let breakdown = ProjectBreakdown(usages: [busy, idleOne, idleTwo], containerAttributions: [:], notices: [])
+        let text = Redactor.textReport(SyntheticSnapshots.snapshot([]), groups: [], findings: [], projects: breakdown, homeDirectory: Self.home)
+        let section = Self.projectSection(text)
+        #expect(section.contains("- busy-app: 2.0 cores (18%), \(Self.bytes(1_000 << 20)), 5 processes"))
+        #expect(!section.contains("idle1"))
+        #expect(!section.contains("idle2"))
+        #expect(section.contains("2 idle projects not shown; Copy JSON for the full list"))
+    }
+
+    @Test("All idle projects leave out the whole Projects section")
+    func allIdleLeavesOutSection() {
+        let idleOne = Self.project("idle1", root: Self.home + "/Developer/idle1", cpu: 2, memory: 64 << 20, processes: 1, from: 200)
+        let idleTwo = Self.project("idle2", root: Self.home + "/Developer/idle2", cpu: nil, memory: 32 << 20, processes: 1, from: 300)
+        let breakdown = ProjectBreakdown(usages: [idleOne, idleTwo], containerAttributions: [:], notices: [])
+        let text = Redactor.textReport(SyntheticSnapshots.snapshot([]), groups: [], findings: [], projects: breakdown, homeDirectory: Self.home)
+        #expect(!text.contains("Projects:"))
+    }
+
+    @Test("9 busy + 3 idle shows 8 lines with more and idle count")
+    func busyAndIdleWithCap() {
+        let busyProjects = (0..<9).map { index in
+            Self.project("p\(index)", root: Self.home + "/p\(index)", cpu: Double(200 - index), memory: 1 << 20, processes: 1, from: Int32(100 + index))
+        }
+        let idleProjects = (0..<3).map { index in
+            Self.project("idle\(index)", root: Self.home + "/idle\(index)", cpu: index == 0 ? 2 : nil, memory: 1 << 20, processes: 1, from: Int32(200 + index))
+        }
+        let breakdown = ProjectBreakdown(usages: busyProjects + idleProjects, containerAttributions: [:], notices: [])
+        let text = Redactor.textReport(SyntheticSnapshots.snapshot([]), groups: [], findings: [], projects: breakdown, homeDirectory: Self.home)
+        let section = Self.projectSection(text)
+        #expect(section.prefix(Redactor.textProjectLimit).map { String($0.prefix(5)) } == (0..<8).map { "- p\($0):" })
+        #expect(section.contains("and 1 more projects; Copy JSON for the full list"))
+        #expect(section.contains("3 idle projects not shown; Copy JSON for the full list"))
+    }
+
+    @Test("JSON still lists all rows including idle")
+    func jsonListsAllRows() throws {
+        let busy = Self.project("busy-app", root: Self.home + "/Developer/busy-app", cpu: 200, memory: 1_000 << 20, processes: 5, from: 100)
+        let idleOne = Self.project("idle1", root: Self.home + "/Developer/idle1", cpu: 2, memory: 64 << 20, processes: 1, from: 200)
+        let idleTwo = Self.project("idle2", root: Self.home + "/Developer/idle2", cpu: nil, memory: 32 << 20, processes: 1, from: 300)
+        let breakdown = ProjectBreakdown(usages: [busy, idleOne, idleTwo], containerAttributions: [:], notices: [])
+        let json = try Redactor.jsonReport(SyntheticSnapshots.snapshot([]), groups: [], findings: [], projects: breakdown, homeDirectory: Self.home)
+        let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        let rows = try #require(object["projects"] as? [[String: Any]])
+        #expect(rows.count == 3)
     }
 }
