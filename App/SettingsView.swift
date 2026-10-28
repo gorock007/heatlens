@@ -52,6 +52,7 @@ struct SettingsView: View {
                 }
 
                 MonitoringSourcesSection(settings: settings)
+                ActionsSection(settings: settings)
 
                 VStack(alignment: .leading, spacing: 5) {
                     ExclusionEditor(
@@ -142,6 +143,23 @@ private struct MonitoringSourcesSection: View {
             Text("Changes apply to the next scan or live start.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// What HeatLens may do to a process, beyond reading it. Off by default.
+private struct ActionsSection: View {
+    @Bindable var settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Actions")
+                .font(.subheadline.weight(.semibold))
+            Toggle("Offer Force Quit when a process ignores a stop request", isOn: $settings.forceQuitEnabled)
+            Text("After a stop request that a process ignores, offers Force Quit (SIGKILL) behind a second confirmation. Off: HeatLens never sends anything stronger than SIGTERM.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

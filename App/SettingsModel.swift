@@ -31,6 +31,7 @@ final class SettingsModel {
         static let globalHotkeyEnabled = "globalHotkeyEnabled"
         static let hardwareSensorsEnabled = "hardwareSensorsEnabled"
         static let dockerEnabled = "dockerEnabled"
+        static let forceQuitEnabled = "forceQuitEnabled"
         static let customLabels = "customLabels"
         static let projectMappings = "projectMappings"
         static let liveInterval = "liveInterval"
@@ -68,6 +69,11 @@ final class SettingsModel {
     /// Opt-in, off by default: read-only Docker Engine API on the local socket (docs/v2/ADR-0002).
     var dockerEnabled: Bool {
         didSet { defaults.set(dockerEnabled, forKey: Key.dockerEnabled) }
+    }
+    /// Off by default: after a stop request a process ignores, offer Force Quit (SIGKILL) behind a
+    /// second confirmation (docs/v2/ADR-0006). Off, HeatLens sends nothing stronger than SIGTERM.
+    var forceQuitEnabled: Bool {
+        didSet { defaults.set(forceQuitEnabled, forKey: Key.forceQuitEnabled) }
     }
     /// `token = Label` lines; see `WorkloadRule.parse`.
     var customLabels: String {
@@ -122,6 +128,7 @@ final class SettingsModel {
         globalHotkeyEnabled = defaults.bool(forKey: Key.globalHotkeyEnabled)
         hardwareSensorsEnabled = defaults.object(forKey: Key.hardwareSensorsEnabled) as? Bool ?? true
         dockerEnabled = defaults.bool(forKey: Key.dockerEnabled)
+        forceQuitEnabled = defaults.bool(forKey: Key.forceQuitEnabled)
         customLabels = defaults.string(forKey: Key.customLabels) ?? ""
         projectMappingsText = defaults.string(forKey: Key.projectMappings) ?? ""
         let storedInterval = defaults.double(forKey: Key.liveInterval)

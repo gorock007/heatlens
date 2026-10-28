@@ -117,10 +117,11 @@ struct ResultsView: View {
             }
         }
         .sheet(item: $stopTarget) { target in
-            StopFlowView(target: target, stopService: stopService, onScanAgain: onScanAgain, onStopped: onStopped)
+            StopFlowView(target: target, settings: settings, stopService: stopService, onScanAgain: onScanAgain,
+                         onStopped: onStopped)
         }
         .sheet(item: $batchTarget) { leftovers in
-            BatchStopFlowView(leftovers: leftovers, context: context, stopService: stopService,
+            BatchStopFlowView(leftovers: leftovers, context: context, settings: settings, stopService: stopService,
                               onScanAgain: onScanAgain, onStopped: onStopped)
         }
     }
@@ -166,7 +167,7 @@ struct ResultsView: View {
                     if findings.isEmpty { EmptyNote("No findings in this sample.") }
                     ForEach(findings) {
                         FindingCard(finding: $0, context: context, stopService: stopService,
-                                    onInspect: { selectedProcess = $0 }, onRequestStop: { stopTarget = $0 })
+                                    onInspect: { selectedProcess = $0 }, onRequestStop: requestStopFromCard)
                     }
                 }
 
@@ -181,7 +182,7 @@ struct ResultsView: View {
                             BatchStopRow(leftovers: batch) { batchTarget = batch }
                         }
                         FindingCard(finding: finding, context: context, stopService: stopService,
-                                    onInspect: { selectedProcess = $0 }, onRequestStop: { stopTarget = $0 })
+                                    onInspect: { selectedProcess = $0 }, onRequestStop: requestStopFromCard)
                     }
                 }
 
@@ -220,6 +221,13 @@ struct ResultsView: View {
         }
     }
 
+    /// A stop offered on a finding card; the audit record files every card under `leftoverCard`.
+    private func requestStopFromCard(_ target: StopTarget) {
+        var target = target
+        target.origin = .leftoverCard
+        stopTarget = target
+    }
+
     /// Projects with 2 or more stoppable leftovers, keyed by the first of their findings, so the
     /// batch button shows once per project, above that project's first leftover card.
     private func batchesByFirstFinding(context: ReportContext) -> [UUID: ProjectLeftovers] {
@@ -241,6 +249,7 @@ struct ResultsView: View {
 
 struct StopFlowView: View {
     let target: StopTarget
+    let settings: SettingsModel
     let stopService: any ProcessStopping
     let onScanAgain: () -> Void
     let onStopped: () -> Void
@@ -251,10 +260,28 @@ struct StopFlowView: View {
     private enum Phase {
         case confirmation
         case stopping
-        case outcome(String, stopped: Bool)
+        /// `stopRequestedAt` is the ledger's SIGTERM time, read only when the process ignored it.
+        case outcome(StopOutcome, stopRequestedAt: Date?)
+        /// The separate force-quit confirmation (ADR-0006 decision 4), never this sheet's SIGTERM step.
+        case forceQuit(stopRequestedAt: Date)
     }
 
     var body: some View {
+        if case .forceQuit(let stopRequestedAt) = phase {
+            ForceQuitFlowView(
+                target: target, stopRequestedAt: stopRequestedAt, stopService: stopService,
+                onCancel: { phase = .outcome(.stillRunning, stopRequestedAt: stopRequestedAt) },
+                onFinished: { if $0 == .stopped { onStopped() } },
+                onScanAgain: onScanAgain)
+        } else {
+            stopSteps
+                .padding(18)
+                .frame(width: 330)
+                .interactiveDismissDisabled(isStopping)
+        }
+    }
+
+    private var stopSteps: some View {
         VStack(alignment: .leading, spacing: 12) {
             switch phase {
             case .confirmation:
@@ -272,28 +299,31 @@ struct StopFlowView: View {
                 }
             case .stopping:
                 ProgressView("Waiting for PID \(target.identity.pid) to exit…")
-                Text("HeatLens sends SIGTERM once and does not force-quit.")
+                Text("HeatLens sends SIGTERM once and never force-quits on its own.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            case .outcome(let message, let stopped):
+            case .outcome(let outcome, let stopRequestedAt):
+                let offer = outcome == .stillRunning && settings.forceQuitEnabled ? stopRequestedAt : nil
                 Text("Stop result")
                     .font(.headline)
-                Text(message)
+                Text(StopWording.message(for: outcome, pid: target.identity.pid, forceQuitOffered: offer != nil))
                     .fixedSize(horizontal: false, vertical: true)
+                if let offer {
+                    ForceQuitOfferButton(stopRequestedAt: offer) { phase = .forceQuit(stopRequestedAt: offer) }
+                }
                 HStack {
                     Button("Done") { dismiss() }
                     Spacer()
-                    Button(stopped ? "Rescan to see the difference" : "Scan again") {
+                    Button(outcome == .stopped ? "Rescan to see the difference" : "Scan again") {
                         dismiss()
                         onScanAgain()
                     }
                     .keyboardShortcut(.defaultAction)
                 }
+            case .forceQuit:
+                EmptyView()
             }
         }
-        .padding(18)
-        .frame(width: 330)
-        .interactiveDismissDisabled(isStopping)
     }
 
     private var confirmationDetails: some View {
@@ -321,11 +351,156 @@ struct StopFlowView: View {
     private func requestStop() {
         // A double-click can call this twice before SwiftUI re-renders; only the first one acts.
         guard case .confirmation = phase else { return }
+        let context = target.context()
         phase = .stopping
         Task {
-            let outcome = await stopService.requestStop(target.identity, wait: 3)
-            phase = .outcome(StopWording.message(for: outcome, pid: target.identity.pid), stopped: outcome == .stopped)
+            let outcome = await stopService.requestStop(target.identity, wait: 3, context: context)
+            let stopRequestedAt = outcome == .stillRunning ? await stopService.stopRequestedAt(target.identity) : nil
+            phase = .outcome(outcome, stopRequestedAt: stopRequestedAt)
             if outcome == .stopped { onStopped() }
+        }
+    }
+}
+
+/// "Force quit…" and the seconds since the stop request, updated once a second. The engine refuses
+/// a force quit once the request is `ProcessTerminator.offerLifetime` old, so the button stops too.
+struct ForceQuitOfferButton: View {
+    let stopRequestedAt: Date
+    let action: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            let elapsed = max(0, timeline.date.timeIntervalSince(stopRequestedAt))
+            let expired = elapsed >= ProcessTerminator.offerLifetime
+            VStack(alignment: .leading, spacing: 2) {
+                Button("Force quit…", role: .destructive, action: action)
+                    .disabled(expired)
+                Text(expired ? ForceQuitFlowView.expiredText : "Stop request sent \(Int(elapsed)) s ago")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The second confirmation for SIGKILL (docs/v2/ADR-0006 decision 4), shared by the single stop
+/// sheet and each still-running row of the batch sheet. Cancel is the default; Force Quit has no
+/// keyboard shortcut.
+struct ForceQuitFlowView: View {
+    static let expiredText = "Too long since the stop request; request a stop again."
+
+    let target: StopTarget
+    /// The ledger's time for the SIGTERM this process ignored.
+    let stopRequestedAt: Date
+    let stopService: any ProcessStopping
+    let onCancel: () -> Void
+    /// Told the outcome once the force quit has run.
+    let onFinished: (StopOutcome) -> Void
+    /// Nil where the presenting sheet has its own "Scan again" (the batch sheet).
+    var onScanAgain: (() -> Void)?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var phase: Phase = .forceQuitConfirmation
+
+    private enum Phase {
+        case forceQuitConfirmation
+        case forceQuitting
+        case forceQuitOutcome(StopOutcome)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            switch phase {
+            case .forceQuitConfirmation:
+                confirmation
+            case .forceQuitting:
+                ProgressView("Waiting for PID \(target.identity.pid) to exit…")
+                Text("HeatLens waits at least \(Int(ProcessTerminator.minimumGraceAfterStop)) s after the stop request, checks it is still the same process, then sends SIGKILL once, to this process only.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .forceQuitOutcome(let outcome):
+                Text("Force Quit result")
+                    .font(.headline)
+                Text(StopWording.message(for: outcome, pid: target.identity.pid, signal: .sigkill))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    if let onScanAgain {
+                        Button("Done") { dismiss() }
+                        Spacer()
+                        Button(outcome == .stopped ? "Rescan to see the difference" : "Scan again") {
+                            dismiss()
+                            onScanAgain()
+                        }
+                        .keyboardShortcut(.defaultAction)
+                    } else {
+                        Spacer()
+                        Button("Done") { dismiss() }
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(width: 330)
+        .interactiveDismissDisabled(isForceQuitting)
+    }
+
+    @ViewBuilder
+    private var confirmation: some View {
+        Text("Force quit \(target.process.name)?")
+            .font(.headline)
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            let elapsed = max(0, timeline.date.timeIntervalSince(stopRequestedAt))
+            let expired = elapsed >= ProcessTerminator.offerLifetime
+            VStack(alignment: .leading, spacing: 12) {
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 5) {
+                    row("Process", "\(target.process.name) · PID \(target.identity.pid)")
+                    row("Project", target.project?.directory ?? "Unknown project")
+                    row("Uptime", Format.uptime(target.identity.uptime(at: timeline.date)))
+                    row("Stop request", expired ? Self.expiredText : "sent \(Int(elapsed)) s ago, ignored")
+                }
+                .font(.caption)
+                Text("Force Quit sends SIGKILL. The process ends at once and cannot save or clean up: unsaved edits, open files, database writes and child processes it owns can be lost or left half done. This cannot be undone.")
+                    .font(.callout.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Child processes it owns can be left running; scan again to see them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Cancel", action: onCancel)
+                        .keyboardShortcut(.defaultAction)
+                    Spacer()
+                    Button("Force Quit", role: .destructive, action: forceQuit)
+                        .disabled(expired)
+                }
+            }
+        }
+    }
+
+    private var isForceQuitting: Bool {
+        if case .forceQuitting = phase { return true }
+        return false
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        GridRow(alignment: .firstTextBaseline) {
+            Text(label).foregroundStyle(.secondary)
+            Text(value).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func forceQuit() {
+        // A double-click can call this twice before SwiftUI re-renders; only the first one acts.
+        guard case .forceQuitConfirmation = phase else { return }
+        let context = target.context()
+        phase = .forceQuitting
+        Task {
+            let outcome = await stopService.forceQuit(target.identity, context: context)
+            phase = .forceQuitOutcome(outcome)
+            onFinished(outcome)
         }
     }
 }

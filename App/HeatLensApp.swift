@@ -34,11 +34,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             stopService = FixtureStopService()
         } else {
             scanService = PipelineScanService()
-            stopService = TerminatorStopService()
+            stopService = TerminatorStopService(forceQuitAllowed: { settings.forceQuitEnabled })
         }
         #else
         scanService = PipelineScanService()
-        stopService = TerminatorStopService()
+        stopService = TerminatorStopService(forceQuitAllowed: { settings.forceQuitEnabled })
         #endif
         // One model for the app's lifetime, so a running scan and the last result survive a close.
         let model = ScanModel(service: scanService, settings: settings)

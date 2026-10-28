@@ -104,7 +104,9 @@ swift run heatlens-probe
 
 ## Status
 
-Read-only diagnosis and confirmed safe stop (SIGTERM only) implemented; signed and notarized from v1.0.0.
+Read-only diagnosis and confirmed safe stop (SIGTERM only by default) implemented; signed and notarized from v1.0.0.
+In v2, the Settings switch "Offer Force Quit when a process ignores a stop request" (off by default)
+adds Force Quit (SIGKILL) for a process that ignored its stop request, behind a second confirmation.
 When one project has several leftovers, one confirmation lists them all with checkboxes and stops
 the selected ones in turn, re-checking each process right before its SIGTERM.
 After a second scan, "Since last scan" shows what changed (CPU, memory pressure, swap, thermal,

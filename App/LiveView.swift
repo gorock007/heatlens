@@ -79,14 +79,22 @@ private struct LiveSelection {
     let context: ReportContext
 }
 
-/// Live mode never stops a process; the detail needs a stop service, and this one refuses.
+/// Live mode never stops or force-quits a process; the detail needs a stop service, and this one refuses.
 private struct LiveNoStopService: ProcessStopping {
     func eligibility(of process: ProcessSample) -> StopEligibility {
         .denied(reason: "Live mode doesn't stop processes.")
     }
 
-    func requestStop(_ identity: ProcessIdentity, wait: TimeInterval) async -> StopOutcome {
+    func requestStop(_ identity: ProcessIdentity, wait: TimeInterval, context: ActionContext) async -> StopOutcome {
         .denied(reason: "Live mode doesn't stop processes.")
+    }
+
+    func forceQuit(_ identity: ProcessIdentity, context: ActionContext) async -> StopOutcome {
+        .denied(reason: "Live mode doesn't stop processes.")
+    }
+
+    func stopRequestedAt(_ identity: ProcessIdentity) async -> Date? {
+        nil
     }
 }
 
