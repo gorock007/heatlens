@@ -259,8 +259,9 @@ struct RedactorTests {
             _ = Redactor.textReport(snapshot, groups: groups, findings: findings, homeDirectory: home)
             _ = try Redactor.jsonReport(snapshot, groups: groups, findings: findings, homeDirectory: home)
         }
-        // Before the fix the same work took several seconds in a debug build.
-        #expect(elapsed < .seconds(1), "took \(elapsed)")
+        // Guards against the old multi-second regression (uncompiled patterns), not a tight budget:
+        // idle it takes 0.4–0.5 s, and heavy machine load has pushed it past 2 s.
+        #expect(elapsed < .seconds(3), "took \(elapsed)")
     }
 }
 

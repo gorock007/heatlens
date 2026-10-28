@@ -23,6 +23,8 @@ struct TimelineCard: View {
 
     let tick: LiveTick
     let keepHistory: Bool
+    /// Opens the incident export for the busiest moment of the range on screen.
+    var onExport: ((TimelineAnalysis.Peak, HistoryWindow) -> Void)?
     @State private var range: Range = .session
     @State private var saved: HistoryWindow = .empty
     @State private var loadedAt: Int = -1
@@ -55,7 +57,7 @@ struct TimelineCard: View {
                     .frame(height: 70)
             }
             if let peak = TimelineAnalysis.peak(in: window), window.points.count >= 2 {
-                PeakSummary(peak: peak)
+                PeakSummary(peak: peak, onExport: onExport.map { export in { export(peak, window) } })
             }
             EventList(events: Array(window.events.suffix(Self.recentEventCount).reversed()))
             if window.events.count > Self.recentEventCount {
@@ -106,6 +108,7 @@ struct TimelineCard: View {
 
 private struct PeakSummary: View {
     let peak: TimelineAnalysis.Peak
+    let onExport: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -121,6 +124,11 @@ private struct PeakSummary: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            if let onExport {
+                Button("Export this moment…", action: onExport)
+                    .font(.caption)
+                    .controlSize(.small)
             }
         }
     }

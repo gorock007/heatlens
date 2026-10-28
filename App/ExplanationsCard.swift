@@ -6,6 +6,8 @@ import HeatLensCore
 /// disclosure. Advice only: nothing here acts on a process.
 struct ExplanationsCard: View {
     let explanations: [Explanation]
+    /// Opens the incident export for one explanation. A plain secondary button; it acts on nothing.
+    var onExport: ((Explanation) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -20,7 +22,7 @@ struct ExplanationsCard: View {
                     .help("HeatLens's reading of what it observed, from rules. Check the observations behind it.")
             }
             ForEach(explanations) { explanation in
-                ExplanationRow(explanation: explanation)
+                ExplanationRow(explanation: explanation, onExport: onExport)
             }
         }
     }
@@ -28,6 +30,7 @@ struct ExplanationsCard: View {
 
 private struct ExplanationRow: View {
     let explanation: Explanation
+    let onExport: ((Explanation) -> Void)?
 
     var body: some View {
         DisclosureGroup {
@@ -48,6 +51,12 @@ private struct ExplanationRow: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let onExport {
+                    Button("Export…") { onExport(explanation) }
+                        .font(.caption)
+                        .controlSize(.small)
+                        .help("Save a redacted report of this moment")
                 }
             }
             .padding(.leading, 4)

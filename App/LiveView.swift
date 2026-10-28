@@ -9,6 +9,8 @@ struct LiveView: View {
     /// The process a Top list row opened, pinned to the update it was clicked in so the detail
     /// doesn't change under the user, or lose the process when it exits.
     @State private var selection: LiveSelection?
+    /// The incident export sheet, set by an explanation, the alert banner or the busiest moment.
+    @State private var exportRequest: IncidentExportRequest?
 
     var body: some View {
         if let selection {
@@ -17,6 +19,7 @@ struct LiveView: View {
                               onBack: { self.selection = nil }, onRequestStop: { _ in })
         } else {
             live
+                .sheet(item: $exportRequest) { IncidentExportSheet(request: $0) }
         }
     }
 
@@ -27,10 +30,13 @@ struct LiveView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         if !tick.explanations.isEmpty {
-                            ExplanationsCard(explanations: tick.explanations)
+                            ExplanationsCard(explanations: tick.explanations) { explanation in
+                                exportRequest = exportRequest(.explanation(explanation), tick: tick)
+                            }
                         }
                         if !model.recentAlerts.isEmpty {
-                            AlertBanner(alerts: model.recentAlerts, onDismiss: model.dismissAlerts)
+                            AlertBanner(alerts: model.recentAlerts, onDismiss: model.dismissAlerts,
+                                        onExport: { exportRequest = exportRequest(.alert(model.recentAlerts[0]), tick: tick) })
                                 .task(id: model.recentAlertsExpireAt) {
                                     // Ticks also expire it; this covers a paused session.
                                     guard let expiry = model.recentAlertsExpireAt else { return }
@@ -42,7 +48,9 @@ struct LiveView: View {
                         if !tick.projects.usages.isEmpty {
                             ProjectsCard(breakdown: tick.projects, groups: tick.groups, limit: 4)
                         }
-                        TimelineCard(tick: tick, keepHistory: model.settings.keepHistory)
+                        TimelineCard(tick: tick, keepHistory: model.settings.keepHistory) { peak, window in
+                            exportRequest = exportRequest(.busiestMoment(peak), tick: tick, window: window)
+                        }
                         TopList(title: "Top CPU", processes: tick.topByCPU, tick: tick, metric: .cpu) { inspect($0, in: tick) }
                         TopList(title: "Top memory", processes: tick.topByMemory, tick: tick, metric: .memory) { inspect($0, in: tick) }
                         HardwareCard(sample: tick.hardware)
@@ -71,6 +79,13 @@ struct LiveView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func exportRequest(_ trigger: IncidentExportRequest.Trigger, tick: LiveTick,
+                               window: HistoryWindow? = nil) -> IncidentExportRequest {
+        IncidentExportRequest(trigger: trigger, timeline: window ?? tick.timeline, alerts: model.recentAlerts,
+                              explanations: tick.explanations, keepHistory: model.settings.keepHistory,
+                              retentionDays: model.settings.historyRetentionDays)
     }
 
     private func inspect(_ identity: ProcessIdentity, in tick: LiveTick) {
@@ -207,6 +222,7 @@ private struct LiveOverview: View {
 private struct AlertBanner: View {
     let alerts: [HeatLensCore.Alert]
     let onDismiss: () -> Void
+    let onExport: () -> Void
 
     var body: some View {
         let first = alerts[0]
@@ -217,6 +233,10 @@ private struct AlertBanner: View {
                 .lineLimit(1)
                 .help(alerts.map { $0.title + " — " + $0.suggestion }.joined(separator: "\n"))
             Spacer(minLength: 0)
+            Button("Export…", action: onExport)
+                .buttonStyle(.link)
+                .font(.caption)
+                .help("Save a redacted report of this alert")
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
