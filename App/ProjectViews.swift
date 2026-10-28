@@ -12,6 +12,9 @@ struct ProjectsCard: View {
     var onInspectContainer: ((ContainerSample) -> Void)? = nil
     /// When set, project rows offer "Ignore this project" (scan results only; Live passes none).
     var settings: SettingsModel? = nil
+    /// When set, project rows offer "Watch this project…" (Live and scan results: a watch is a
+    /// setting, not an action, so read-only Live may offer it). Scan results pass `settings` instead.
+    var watchSettings: SettingsModel? = nil
     @State private var showAll = false
 
     var body: some View {
@@ -28,7 +31,8 @@ struct ProjectsCard: View {
             }
             ForEach(showAll ? projects : Array(projects.prefix(limit))) { usage in
                 ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions,
-                           onInspectContainer: onInspectContainer, settings: settings)
+                           onInspectContainer: onInspectContainer, settings: settings,
+                           watchSettings: watchSettings ?? settings)
             }
             if projects.count > limit {
                 Button(showAll ? "Show fewer" : "Show all \(projects.count) projects") { showAll.toggle() }
@@ -37,7 +41,8 @@ struct ProjectsCard: View {
             }
             ForEach(others) { usage in
                 ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions,
-                           onInspectContainer: onInspectContainer, settings: settings)
+                           onInspectContainer: onInspectContainer, settings: settings,
+                           watchSettings: watchSettings ?? settings)
             }
             ForEach(breakdown.notices, id: \.self) { notice in
                 Label(notice, systemImage: "info.circle")
@@ -55,8 +60,10 @@ private struct ProjectRow: View {
     let attributions: [String: ContainerAttribution]
     let onInspectContainer: ((ContainerSample) -> Void)?
     let settings: SettingsModel?
+    let watchSettings: SettingsModel?
 
     @State private var ignored = false
+    @State private var watching: Project?
 
     var body: some View {
         DisclosureGroup {
@@ -103,25 +110,38 @@ private struct ProjectRow: View {
                     }
                 }
                 // Projects only: not the Docker VM row, not Unattributed.
-                if let settings, let project = usage.project {
-                    if ignored {
+                if let project = usage.project {
+                    if settings != nil, ignored {
                         Text(ActionRecording.ignoredNote)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else if !settings.isProjectExcluded(project.root) {
-                        Button("Ignore this project") {
-                            ActionRecording.ignoreProject(directory: project.root, name: project.name,
-                                                          origin: .projectRow, settings: settings)
-                            ignored = true
-                        }
-                        .controlSize(.small)
-                        .help("Add \(ProjectFormat.path(project.root)) to the excluded projects in Settings")
-                        .padding(.top, 2)
                     }
+                    HStack(spacing: 8) {
+                        if let watchSettings {
+                            let watched = watchSettings.watch(for: project.id) != nil
+                            Button(watched ? "Edit watch…" : "Watch this project…") { watching = project }
+                                .controlSize(.small)
+                                .help(watched ? "Change or remove the alert on \(project.name)"
+                                      : "Get a notification when \(project.name) stays busy")
+                        }
+                        if let settings, !ignored, !settings.isProjectExcluded(project.root) {
+                            Button("Ignore this project") {
+                                ActionRecording.ignoreProject(directory: project.root, name: project.name,
+                                                              origin: .projectRow, settings: settings)
+                                ignored = true
+                            }
+                            .controlSize(.small)
+                            .help("Add \(ProjectFormat.path(project.root)) to the excluded projects in Settings")
+                        }
+                    }
+                    .padding(.top, 2)
                 }
             }
             .padding(.leading, 4)
+            .sheet(item: $watching) { project in
+                if let watchSettings { ProjectWatchSheet(project: project, settings: watchSettings) }
+            }
         } label: {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 1) {

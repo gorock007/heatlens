@@ -41,6 +41,8 @@ struct AlertSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.leading, 18)
                 }
+                watchedProjects
+                    .padding(.leading, 18)
                 if settings.notificationsDenied {
                     HStack {
                         Text("Notifications are off for HeatLens")
@@ -56,6 +58,55 @@ struct AlertSettingsSection: View {
         .task(id: settings.liveAlertsEnabled) {
             if settings.liveAlertsEnabled { await settings.refreshNotificationStatus() }
         }
+    }
+
+    /// The watches from Projects cards (brief 4g): names and thresholds, each with Remove.
+    @ViewBuilder
+    private var watchedProjects: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Watched projects")
+                .font(.callout)
+            if settings.projectWatches.isEmpty {
+                Text("None. Open a project in Live or a scan result and choose “Watch this project…”.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(settings.projectWatches) { watch in
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: watch.name)
+                            .font(.caption)
+                        Text(Self.summary(watch))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Remove") { settings.removeWatch(projectID: watch.projectID) }
+                        .controlSize(.small)
+                }
+            }
+            if let notice = settings.projectWatchesNotice {
+                Text(notice)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    /// "CPU above 200% · Memory above 4 GB"
+    private static func summary(_ watch: ProjectWatch) -> String {
+        ProjectWatch.Metric.allCases.compactMap { metric in
+            watch.threshold(metric).map { on in
+                switch metric {
+                case .cpu: "CPU above \(ProjectWatch.describe(on, for: metric))"
+                case .memory: "Memory above \(ProjectWatch.describe(on, for: metric))"
+                case .commands: "\(ProjectWatch.describe(on, for: metric)) or more commands at once"
+                }
+            }
+        }.joined(separator: " · ")
     }
 
     @ViewBuilder

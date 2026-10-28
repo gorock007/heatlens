@@ -57,15 +57,32 @@ final class LiveAlertService {
         live.setAlerts(configuration)
     }
 
+    /// One per rule, or per watched project and metric, so a repeat replaces the last banner.
+    /// `projectHash` keeps the folder out of the identifier.
+    private static func identifier(_ alert: Alert) -> String {
+        if let watch = alert.watch { return notificationPrefix + "watch.\(watch.metric.rawValue).\(watch.projectHash)" }
+        return notificationPrefix + (alert.rule?.rawValue ?? alert.id)
+    }
+
+    /// A rule: its projects, then the suggestion. A watch, whose title already names the project:
+    /// the value now and the threshold, then the suggestion. Names and figures only, never a path.
+    private static func body(_ alert: Alert) -> String {
+        guard alert.watch != nil else {
+            return (alert.projects.isEmpty ? "" : alert.projects.joined(separator: ", ") + " · ") + alert.suggestion
+        }
+        let figures = alert.observations.prefix(2).map { "\($0.label): \($0.value)" }
+        return (figures + [alert.suggestion]).joined(separator: " · ")
+    }
+
     private func post(_ alert: Alert) {
         // The opt-in thermal alert (v1) already notifies on serious heat: the timeline marker is enough.
         if alert.rule == .thermal, settings.thermalAlertsEnabled { return }
         let content = UNMutableNotificationContent()
         content.title = alert.title
-        content.body = (alert.projects.isEmpty ? "" : alert.projects.joined(separator: ", ") + " · ") + alert.suggestion
+        content.body = Self.body(alert)
         // Owner decision 2 (ADR-0008): alerts respect Focus, never Time Sensitive.
         content.interruptionLevel = .active
-        let request = UNNotificationRequest(identifier: Self.notificationPrefix + (alert.rule?.rawValue ?? alert.id), content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: Self.identifier(alert), content: content, trigger: nil)
         // Settings asks when the switch is turned on; macOS asks the user at most once.
         Task {
             let center = UNUserNotificationCenter.current()

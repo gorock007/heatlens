@@ -47,7 +47,7 @@ struct LiveView: View {
                         }
                         LiveOverview(tick: tick)
                         if !tick.projects.usages.isEmpty {
-                            ProjectsCard(breakdown: tick.projects, groups: tick.groups, limit: 4)
+                            ProjectsCard(breakdown: tick.projects, groups: tick.groups, limit: 4, watchSettings: model.settings)
                         }
                         TimelineCard(tick: tick, keepHistory: model.settings.keepHistory) { peak, window in
                             exportRequest = exportRequest(.busiestMoment(peak), tick: tick, window: window)

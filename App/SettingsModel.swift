@@ -40,6 +40,7 @@ final class SettingsModel {
         static let historyRetentionDays = "historyRetentionDays"
         static let liveAlertsEnabled = "liveAlertsEnabled"
         static let keepWatchingInBackground = "keepWatchingInBackground"
+        static let projectWatches = "projectWatches"
         static func alertRuleEnabled(_ kind: AlertRule.Kind) -> String { "liveAlert.\(kind.rawValue).enabled" }
         static func alertThreshold(_ kind: AlertRule.Kind) -> String { "liveAlert.\(kind.rawValue).on" }
     }
@@ -124,6 +125,16 @@ final class SettingsModel {
     var alertThresholds: [AlertRule.Kind: Double] {
         didSet { for (kind, on) in alertThresholds { defaults.set(on, forKey: Key.alertThreshold(kind)) } }
     }
+    /// Per-project watches (brief 4g), a JSON array; checked only while `liveAlertsEnabled` is on.
+    /// Set through `setWatch` and `removeWatch`.
+    private(set) var projectWatches: [ProjectWatch] {
+        didSet {
+            defaults.set(ProjectWatch.encoded(projectWatches), forKey: Key.projectWatches)
+            projectWatchesNotice = nil
+        }
+    }
+    /// Why some stored watches were dropped when the setting was read; cleared by the next change.
+    private(set) var projectWatchesNotice: String?
     /// Set by `GlobalHotkey` when ⌃⌥H couldn't be registered, usually because another app holds it.
     var globalHotkeyConflict = false
     /// True when the user has turned HeatLens notifications off in System Settings.
@@ -154,6 +165,9 @@ final class SettingsModel {
         historyRetentionDays = HistoryStore.retentionChoices.contains(storedRetention) ? storedRetention : HistoryStore.defaultRetentionDays
         liveAlertsEnabled = defaults.bool(forKey: Key.liveAlertsEnabled)
         keepWatchingInBackground = defaults.bool(forKey: Key.keepWatchingInBackground)
+        let storedWatches = ProjectWatch.parse(defaults.data(forKey: Key.projectWatches) ?? Data())
+        projectWatches = storedWatches.watches
+        projectWatchesNotice = storedWatches.notice
         var rulesEnabled: [AlertRule.Kind: Bool] = [:]
         var thresholds: [AlertRule.Kind: Double] = [:]
         for kind in AlertRule.Kind.allCases {
@@ -211,11 +225,37 @@ final class SettingsModel {
         return true
     }
 
-    /// What Live checks, from the switches and thresholds above.
+    /// The watch on a project (`Project.id`), if any.
+    func watch(for projectID: String) -> ProjectWatch? {
+        projectWatches.first { $0.projectID == projectID.lowercased() }
+    }
+
+    /// Adds or replaces the watch on its project; a watch with every metric off removes it. A new
+    /// watch past `ProjectWatch.maxWatches` isn't added, and this returns false.
+    @discardableResult
+    func setWatch(_ watch: ProjectWatch) -> Bool {
+        guard watch.isWatching else {
+            removeWatch(projectID: watch.projectID)
+            return true
+        }
+        if let index = projectWatches.firstIndex(where: { $0.projectID == watch.projectID }) {
+            projectWatches[index] = watch
+            return true
+        }
+        guard projectWatches.count < ProjectWatch.maxWatches else { return false }
+        projectWatches.append(watch)
+        return true
+    }
+
+    func removeWatch(projectID: String) {
+        projectWatches.removeAll { $0.projectID == projectID.lowercased() }
+    }
+
+    /// What Live checks, from the switches, thresholds and watches above.
     var alertConfiguration: AlertConfiguration {
         AlertConfiguration(isEnabled: liveAlertsEnabled, rules: AlertRule.Kind.allCases.map { kind in
             AlertRule.defaults(kind, on: alertThresholds[kind] ?? AlertRule.defaults(kind).on, isEnabled: alertRulesEnabled[kind] ?? true)
-        })
+        }, watches: projectWatches)
     }
 
     /// Like `setThermalAlerts`: turning Live alerts on asks for notification permission.
