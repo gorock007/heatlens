@@ -6,7 +6,21 @@ import HeatLensCore
 struct LiveView: View {
     let model: LiveModel
 
+    /// The process a Top list row opened, pinned to the update it was clicked in so the detail
+    /// doesn't change under the user, or lose the process when it exits.
+    @State private var selection: LiveSelection?
+
     var body: some View {
+        if let selection {
+            // Live keeps ticking underneath; Back returns to the newest update.
+            ProcessDetailView(identity: selection.identity, context: selection.context, stopService: LiveNoStopService(),
+                              onBack: { self.selection = nil }, onRequestStop: { _ in })
+        } else {
+            live
+        }
+    }
+
+    private var live: some View {
         VStack(alignment: .leading, spacing: 12) {
             Controls(model: model)
             if let tick = model.latest {
@@ -20,8 +34,8 @@ struct LiveView: View {
                             ProjectsCard(breakdown: tick.projects, groups: tick.groups, limit: 4)
                         }
                         TimelineCard(tick: tick, keepHistory: model.settings.keepHistory)
-                        TopList(title: "Top CPU", processes: tick.topByCPU, tick: tick, metric: .cpu)
-                        TopList(title: "Top memory", processes: tick.topByMemory, tick: tick, metric: .memory)
+                        TopList(title: "Top CPU", processes: tick.topByCPU, tick: tick, metric: .cpu) { inspect($0, in: tick) }
+                        TopList(title: "Top memory", processes: tick.topByMemory, tick: tick, metric: .memory) { inspect($0, in: tick) }
                         HardwareCard(sample: tick.hardware)
                         DockerCard(snapshot: tick.docker.availability == .disabled ? nil : tick.docker) {
                             // Same switch as Settings; restart so the session picks it up.
@@ -47,6 +61,29 @@ struct LiveView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func inspect(_ identity: ProcessIdentity, in tick: LiveTick) {
+        // No findings, so the detail never offers Request stop: Live mode doesn't stop processes.
+        let report = ScanReport(snapshot: tick.snapshot, groups: tick.groups, findings: [], reportText: "", reportJSON: "",
+                                hardware: tick.hardware, docker: tick.docker, projects: tick.projects)
+        selection = LiveSelection(identity: identity, context: ReportContext(report: report))
+    }
+}
+
+private struct LiveSelection {
+    let identity: ProcessIdentity
+    let context: ReportContext
+}
+
+/// Live mode never stops a process; the detail needs a stop service, and this one refuses.
+private struct LiveNoStopService: ProcessStopping {
+    func eligibility(of process: ProcessSample) -> StopEligibility {
+        .denied(reason: "Live mode doesn't stop processes.")
+    }
+
+    func requestStop(_ identity: ProcessIdentity, wait: TimeInterval) async -> StopOutcome {
+        .denied(reason: "Live mode doesn't stop processes.")
     }
 }
 
@@ -150,6 +187,7 @@ private struct TopList: View {
     let processes: [ProcessSample]
     let tick: LiveTick
     let metric: Metric
+    let onInspect: (ProcessIdentity) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -162,32 +200,43 @@ private struct TopList: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(processes.prefix(8)) { process in
-                HStack(spacing: 8) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(process.name)
-                            .font(.callout)
-                            .lineLimit(1)
-                        Text(verbatim: "PID \(process.pid) · \(group(of: process))")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    Sparkline(values: series(process))
-                        .frame(width: 44, height: 14)
-                    VStack(alignment: .trailing, spacing: 0) {
-                        Text(value(process))
-                            .font(.caption.monospacedDigit())
-                        if metric == .cpu, let watts = Format.watts(process.cpuWatts) {
-                            Text(watts)
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(width: 58, alignment: .trailing)
-                }
+                // The whole row inspects, like the Ports rows in results.
+                Button { onInspect(process.identity) } label: { row(process) }
+                    .buttonStyle(.plain)
+                    .help("Inspect process")
             }
         }
+    }
+
+    private func row(_ process: ProcessSample) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(process.name)
+                    .font(.callout)
+                    .lineLimit(1)
+                Text(verbatim: "PID \(process.pid) · \(group(of: process))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Sparkline(values: series(process))
+                .frame(width: 44, height: 14)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(value(process))
+                    .font(.caption.monospacedDigit())
+                if metric == .cpu, let watts = Format.watts(process.cpuWatts) {
+                    Text(watts)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 58, alignment: .trailing)
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
     }
 
     private func value(_ process: ProcessSample) -> String {

@@ -98,7 +98,9 @@ struct SettingsView: View {
 
                 UpdateSection(checker: updates)
 
-                Text("Settings are stored on this Mac. HeatLens keeps no scan history.")
+                Text(settings.keepHistory
+                     ? "Settings are stored on this Mac. Live mode keeps history on this Mac for \(settings.historyRetentionDays == 1 ? "1 day" : "\(settings.historyRetentionDays) days"); scans are never saved."
+                     : "Settings are stored on this Mac. HeatLens keeps no history.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
