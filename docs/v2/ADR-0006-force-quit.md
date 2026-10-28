@@ -110,21 +110,24 @@ it; that is what the user is told and confirms.
 
 ## Audit record (defined here, stored by Phase 3e)
 
-The ledger holds one `ActionRecord` per attempt. No argv, no environment, no paths beyond the
-project name. 3e persists it.
+The ledger holds one `ActionRecord` per attempt, and since 3e also one per cancelled
+confirmation and per ignore. No argv, no environment, no paths beyond the project name. It keeps
+the session's newest 500 records in memory; 3e-1 saves each new one to history while Keep
+history is on (ADR-0005 Addendum 3e). Records decode with or without the fields 3e added.
 
 | Field | Content |
 |---|---|
 | `id` | UUID |
 | `at` | Date the action was decided (signal sent, or refused) |
-| `action` | `stopRequested` (SIGTERM), `forceQuit` (SIGKILL), `containerStop` (ADR-0007) |
-| `target` | `.process(pid, startTimeMicros, name ≤ 80 chars)` or `.container(shortID 12 hex, name ≤ 80, image ≤ 80, composeProject?)` |
+| `action` | `stopRequested` (SIGTERM), `forceQuit` (SIGKILL), `containerStop` (ADR-0007), `ignored` (the user chose "ignore this process/project", 3e-2), `cancelled` (a stop, force quit or container stop was offered and the user backed out at its confirmation) |
+| `target` | `.process(pid, startTimeMicros, name ≤ 80 chars)`, `.container(shortID 12 hex, name ≤ 80, image ≤ 80, composeProject?)` or `.project(name ≤ 80)` (an ignored project, by name only) |
 | `projectName` | The attributed project's name, or nil; never its directory |
-| `origin` | `processDetail`, `leftoverCard`, `batchStop`, `containerDetail` |
-| `confirmedAt` | When the user pressed the destructive button |
+| `origin` | `processDetail`, `leftoverCard`, `batchStop`, `containerDetail`, `findingCard`, `projectRow` |
+| `confirmedAt` | When the user pressed the destructive button; nil for `cancelled` and `ignored` |
 | `signalSentAt` | When the signal or request left HeatLens, or nil when refused |
-| `outcome` | The `StopOutcome` (or `ContainerStopOutcome`) case name |
+| `outcome` | The `StopOutcome` (or `ContainerStopOutcome`) case name; `cancelled` or `ignored` for those actions |
 | `detail` | The reason text for `denied`/`failed`, ≤ 200 chars, passed through `Redactor.text` |
+| `offered` | For `cancelled`: the action backed out of (`stopRequested`, `forceQuit`, `containerStop`); nil otherwise and in records from before 3e |
 
 ## Tests (what proves it is safe)
 

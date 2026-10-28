@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import SQLite3
 import Testing
 @testable import HeatLensCore
 
@@ -19,6 +20,13 @@ private func scratchURL() -> URL {
 private func point(_ date: Date, busy: Double = 0.25, thermal: ThermalState = .nominal, temperature: Double? = 55) -> HistoryPoint {
     HistoryPoint(timestamp: date, thermalState: thermal, hostBusyFraction: busy, swapUsedBytes: 1 << 30, memoryPressure: .normal,
                  cpuTemperatureCelsius: temperature, systemWatts: 18, processWatts: nil)
+}
+
+private func action(_ date: Date, _ kind: ActionRecord.Action = .stopRequested, name: String = "node",
+                    detail: String? = nil, offered: ActionRecord.Action? = nil) -> ActionRecord {
+    ActionRecord(at: date, action: kind, target: .process(pid: 4_242, startTimeMicros: 17, name: name), projectName: "my-app",
+                 origin: .processDetail, confirmedAt: date.addingTimeInterval(-1), signalSentAt: kind == .stopRequested ? date : nil,
+                 outcome: kind == .cancelled ? "cancelled" : "stopped", detail: detail, offered: offered)
 }
 
 private func mode(_ path: String) -> mode_t {
@@ -165,5 +173,92 @@ struct HistoryStoreTests {
         // Deleting twice is fine.
         try await HistoryStore.deleteHistory(at: url, closing: fresh)
         try await HistoryStore.deleteHistory(at: url)
+    }
+
+    @Test("action records round-trip newest first, each id once, with hostile text bound not spliced")
+    func actionsRoundTrip() async throws {
+        let clock = TestClock()
+        let store = try HistoryStore(url: scratchURL(), now: { clock.now })
+        let t = clock.now
+        let hostile = "x'); DROP TABLE actions; --"
+        let records = [
+            action(t),
+            action(t.addingTimeInterval(1), .cancelled, name: hostile, offered: .forceQuit),
+            ActionRecord(at: t.addingTimeInterval(2), action: .containerStop,
+                         target: .container(shortID: "abcdef012345", name: "fda-db-1", image: "postgres:16", composeProject: "fda"),
+                         projectName: "FDA", origin: .containerDetail, confirmedAt: t, signalSentAt: nil, outcome: "denied",
+                         detail: hostile),
+            ActionRecord(at: t.addingTimeInterval(3), action: .ignored, target: .project(name: "my-app"), projectName: "my-app",
+                         origin: .projectRow, confirmedAt: nil, signalSentAt: nil, outcome: "ignored", detail: nil),
+        ]
+        try await store.record(actions: records)
+        try await store.record(actions: [records[0]])
+        #expect(try await store.actions(since: .distantPast) == records.reversed())
+        #expect(try await store.actions(since: t.addingTimeInterval(2)) == [records[3], records[2]])
+        #expect(try await store.actions(since: .distantPast, limit: 1) == [records[3]])
+        #expect(try await store.counts().samples == 0)
+    }
+
+    @Test("a database from before 3e (no actions table) opens, keeps its rows and gains the table")
+    func oldSchemaUpgrades() async throws {
+        let url = scratchURL()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        var handle: OpaquePointer?
+        #expect(sqlite3_open(url.path, &handle) == SQLITE_OK)
+        let old = """
+            CREATE TABLE samples (ts INTEGER PRIMARY KEY, thermal INTEGER NOT NULL, busy REAL NOT NULL, busy_peak REAL NOT NULL,
+                swap INTEGER NOT NULL, pressure INTEGER NOT NULL, cpu_temp REAL, system_w REAL, process_w REAL,
+                n INTEGER NOT NULL DEFAULT 1, rolled INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE projects (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL);
+            CREATE TABLE project_samples (ts INTEGER NOT NULL, project INTEGER NOT NULL, cpu REAL NOT NULL, cpu_peak REAL NOT NULL,
+                memory INTEGER NOT NULL, watts REAL, rolled INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (ts, project)) WITHOUT ROWID;
+            CREATE TABLE events (ts INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, project TEXT, inference INTEGER NOT NULL);
+            INSERT INTO events VALUES (2000000000000, 'containerStarted', 'db', NULL, 0);
+            """
+        #expect(sqlite3_exec(handle, old, nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(handle)
+
+        let clock = TestClock()
+        let store = try HistoryStore(url: url, now: { clock.now })
+        #expect(try await store.counts().events == 1)
+        #expect(try await store.actions(since: .distantPast).isEmpty)
+        let record = action(clock.now)
+        try await store.record(actions: [record])
+        #expect(try await store.actions(since: .distantPast) == [record])
+    }
+
+    @Test("retention and the 5,000 cap drop action records; Delete history removes them")
+    func actionsRetentionAndDelete() async throws {
+        let clock = TestClock()
+        let url = scratchURL()
+        let store = try HistoryStore(url: url, retentionDays: 7, now: { clock.now })
+        let first = action(clock.now)
+        try await store.record(actions: [first])
+        clock.advance(3 * 86_400)
+        let second = action(clock.now)
+        try await store.record(actions: [second])
+        try await store.maintain()
+        #expect(try await store.actions(since: .distantPast) == [second, first])
+        clock.advance(5 * 86_400)
+        try await store.maintain()
+        #expect(try await store.actions(since: .distantPast) == [second])
+        try await store.setRetention(days: 1)
+        #expect(try await store.actions(since: .distantPast).isEmpty)
+
+        let many = (0..<(HistoryStore.maximumActions + 10)).map { action(clock.now.addingTimeInterval(TimeInterval($0))) }
+        try await store.record(actions: many)
+        // The row cap is checked hourly, behind retention.
+        clock.advance(HistoryStore.capCheckInterval)
+        try await store.maintain()
+        let kept = try await store.actions(since: .distantPast)
+        #expect(kept.count == HistoryStore.maximumActions)
+        #expect(kept.first == many.last)
+        #expect(kept.last == many[10])
+
+        try await HistoryStore.deleteHistory(at: url, closing: store)
+        let fresh = try HistoryStore(url: url)
+        #expect(try await fresh.actions(since: .distantPast).isEmpty)
+        try await HistoryStore.deleteHistory(at: url, closing: fresh)
     }
 }

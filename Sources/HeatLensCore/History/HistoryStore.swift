@@ -5,10 +5,13 @@ import SQLite3
 /// Local, bounded history of live ticks in SQLite, the copy that ships with macOS (brief 2c,
 /// docs/v2/ADR-0005). Raw ticks are kept for `highResolutionWindow`; older ticks are rolled
 /// into one row per minute, kept for the retention period. Written only from live ticks, and
-/// only when the user turned on "Keep history".
+/// only when the user turned on "Keep history". The `actions` table holds the app's action
+/// records (stops, force quits, container stops), written outside Live too, only while Keep
+/// history is on (ADR-0005 Addendum 3e).
 ///
 /// The file holds timestamps, load, heat, swap, power, project names and folders, container
-/// and process *names*. Never command lines, environment, file contents or process IDs.
+/// and process *names*. Never command lines, environment or file contents; process IDs appear
+/// only inside an action record, which names the process it signalled.
 public actor HistoryStore {
     public enum Failure: Error, Equatable {
         case open(String)
@@ -23,6 +26,7 @@ public actor HistoryStore {
     static let maximumEvents = 20_000
     static let maximumRollupRows = 30 * 24 * 60
     static let maximumProjectRollupRows = 30 * 24 * 60 * 10
+    public static let maximumActions = 5_000
     /// Projects kept per tick: the busiest, so a hundred idle folders don't fill the file.
     public static let projectsPerTick = 8
     static let maintenanceInterval: TimeInterval = 60
@@ -87,7 +91,11 @@ public actor HistoryStore {
                     PRIMARY KEY (ts, project)) WITHOUT ROWID;
                 CREATE TABLE IF NOT EXISTS events (
                     ts INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, project TEXT, inference INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS actions (
+                    id TEXT PRIMARY KEY, ts INTEGER NOT NULL, action TEXT NOT NULL, outcome TEXT NOT NULL,
+                    record TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
+                CREATE INDEX IF NOT EXISTS actions_ts ON actions (ts);
                 CREATE INDEX IF NOT EXISTS samples_raw ON samples (ts) WHERE rolled = 0;
                 CREATE INDEX IF NOT EXISTS project_samples_raw ON project_samples (ts) WHERE rolled = 0;
                 """)
@@ -135,6 +143,46 @@ public actor HistoryStore {
         }
     }
 
+    /// Stores action records, each once: a record whose `id` is already saved is skipped. The
+    /// record is kept as its JSON, next to `ts`, `action` and `outcome` columns for pruning and
+    /// queries. Prunes at most once a minute, as `record(_:projects:events:)` does.
+    public func record(actions: [ActionRecord]) throws {
+        guard let db else { throw Failure.open("closed") }
+        guard !actions.isEmpty else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        try Self.exec(db, "BEGIN")
+        do {
+            for action in actions {
+                let json = String(decoding: try encoder.encode(action), as: UTF8.self)
+                try run(db, "INSERT OR IGNORE INTO actions (id, ts, action, outcome, record) VALUES (?,?,?,?,?)",
+                        [.text(action.id.uuidString), .int(Self.millis(action.at)), .text(action.action.rawValue),
+                         .text(action.outcome), .text(json)])
+            }
+            try Self.exec(db, "COMMIT")
+        } catch {
+            try? Self.exec(db, "ROLLBACK")
+            throw error
+        }
+        let date = now()
+        if lastMaintenance.map({ date.timeIntervalSince($0) >= Self.maintenanceInterval }) ?? true {
+            try maintain()
+        }
+    }
+
+    /// Saved action records decided at or after `since`, newest first, at most `limit`. A row that
+    /// no longer decodes is skipped.
+    public func actions(since: Date, limit: Int = HistoryStore.maximumActions) throws -> [ActionRecord] {
+        guard let db else { throw Failure.open("closed") }
+        let decoder = JSONDecoder()
+        var records: [ActionRecord] = []
+        try query(db, "SELECT record FROM actions WHERE ts >= ? ORDER BY ts DESC, rowid DESC LIMIT ?",
+                  [.int(Self.millis(since)), .int(Int64(max(0, limit)))]) { row in
+            if let record = try? decoder.decode(ActionRecord.self, from: Data(row.text(0).utf8)) { records.append(record) }
+        }
+        return records
+    }
+
     public func setRetention(days: Int) throws {
         retentionDays = Self.clampedRetention(days)
         try maintain()
@@ -167,10 +215,13 @@ public actor HistoryStore {
             try run(db, "DELETE FROM samples WHERE ts < ?", [.int(retention)])
             try run(db, "DELETE FROM project_samples WHERE ts < ?", [.int(retention)])
             try run(db, "DELETE FROM events WHERE ts < ?", [.int(retention)])
+            try run(db, "DELETE FROM actions WHERE ts < ?", [.int(retention)])
             if hourly {
                 lastCapCheck = date
                 try run(db, "DELETE FROM events WHERE rowid IN (SELECT rowid FROM events ORDER BY ts DESC LIMIT -1 OFFSET ?)",
                         [.int(Int64(Self.maximumEvents))])
+                try run(db, "DELETE FROM actions WHERE rowid IN (SELECT rowid FROM actions ORDER BY ts DESC LIMIT -1 OFFSET ?)",
+                        [.int(Int64(Self.maximumActions))])
                 try run(db, "DELETE FROM samples WHERE ts IN (SELECT ts FROM samples ORDER BY ts DESC LIMIT -1 OFFSET ?)",
                         [.int(Int64(Self.maximumRollupRows + 720))])
                 try run(db, """

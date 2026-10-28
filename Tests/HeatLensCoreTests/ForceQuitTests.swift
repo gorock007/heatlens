@@ -196,15 +196,89 @@ struct StopLedgerTests {
         #expect(await ledger.stopRequestedAt(identity) == newer.signalSentAt)
     }
 
-    @Test("Entries older than 10 minutes are dropped")
-    func pruning() async {
+    @Test("Records older than 10 minutes are kept; stopRequestedAt still looks back only 10 minutes")
+    func sessionLifetime() async {
         let ledger = StopLedger()
-        await ledger.record(forgedStop(identity, secondsAgo: StopLedger.retention + 1))
+        let old = forgedStop(identity, secondsAgo: StopLedger.stopLookupWindow + 60)
+        await ledger.record(old)
+        #expect(await ledger.records() == [old])
         #expect(await ledger.stopRequestedAt(identity) == nil)
-        #expect(await ledger.records(since: .distantPast).isEmpty)
         let recent = forgedStop(identity, secondsAgo: 5)
         await ledger.record(recent)
+        #expect(await ledger.records() == [recent, old])
         #expect(await ledger.records(since: Date().addingTimeInterval(-60)) == [recent])
+        #expect(await ledger.stopRequestedAt(identity) == recent.signalSentAt)
+    }
+
+    @Test("Keeping old records doesn't loosen force quit: a SIGTERM over 60 s old is refused, child lives")
+    func offerStillExpires() async throws {
+        let child = try FixtureChild.ignoringSIGTERM()
+        defer { child.stop() }
+        for secondsAgo in [ProcessTerminator.offerLifetime + 1, StopLedger.stopLookupWindow - 1, StopLedger.stopLookupWindow + 60] {
+            let ledger = StopLedger()
+            await ledger.record(forgedStop(child.identity, secondsAgo: secondsAgo))
+            let outcome = await ProcessTerminator().forceQuit(child.identity, ledger: ledger)
+            guard case .denied = outcome else {
+                Issue.record("\(secondsAgo) s: expected .denied, got \(outcome)")
+                continue
+            }
+            #expect(await ledger.records().first?.signalSentAt == nil)
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(child.isAlive)
+    }
+
+    @Test("The ledger keeps the newest 500 records, and onRecord sees every one")
+    func capacity() async {
+        let seen = Counter()
+        let ledger = StopLedger { _ in seen.increment() }
+        let records = (0..<(StopLedger.capacity + 20)).map { index in
+            ActionRecord(at: Date(timeIntervalSince1970: TimeInterval(index)), action: .stopRequested,
+                         target: .process(pid: 40_000 + Int32(index), startTimeMicros: 1, name: "fixture"),
+                         projectName: nil, origin: nil, confirmedAt: nil, signalSentAt: nil, outcome: "denied", detail: nil)
+        }
+        for record in records { await ledger.record(record) }
+        let kept = await ledger.records()
+        #expect(kept.count == StopLedger.capacity)
+        #expect(kept.first == records.last)
+        #expect(kept.last == records[20])
+        #expect(seen.value == records.count)
+    }
+
+    @Test("The 3e kinds, the project target and the new origins encode and decode")
+    func newKindsCodable() throws {
+        let records = [
+            ActionRecord(at: Date(timeIntervalSince1970: 1_800_000_000.25), action: .ignored, target: .project(name: "my-app"),
+                         projectName: "my-app", origin: .projectRow, confirmedAt: nil, signalSentAt: nil, outcome: "ignored", detail: nil),
+            ActionRecord(at: Date(timeIntervalSince1970: 1_800_000_001), action: .ignored,
+                         target: .process(pid: 4_242, startTimeMicros: 9, name: "node"),
+                         projectName: nil, origin: .findingCard, confirmedAt: nil, signalSentAt: nil, outcome: "ignored", detail: nil),
+            ActionRecord(at: Date(timeIntervalSince1970: 1_800_000_002), action: .cancelled,
+                         target: .container(shortID: "abcdef012345", name: "db", image: "postgres", composeProject: "fda"),
+                         projectName: "FDA", origin: .containerDetail, confirmedAt: nil, signalSentAt: nil, outcome: "cancelled",
+                         detail: nil, offered: .containerStop),
+        ]
+        let data = try JSONEncoder().encode(records)
+        #expect(try JSONDecoder().decode([ActionRecord].self, from: data) == records)
+        let long = ActionRecord(at: Date(), action: .ignored, target: .project(name: String(repeating: "p", count: 100)),
+                                projectName: nil, origin: .projectRow, confirmedAt: nil, signalSentAt: nil, outcome: "ignored", detail: nil)
+        #expect(long.target == .project(name: String(repeating: "p", count: ActionRecord.nameLimit)))
+    }
+
+    @Test("A record saved before 3e (no `offered`) still decodes")
+    func oldRecordDecodes() throws {
+        let json = """
+            {"action":"stopRequested","at":800000000.5,"confirmedAt":799999999,"id":"5B7C1C4E-2F0E-4C47-9B44-3A0D3F2A9E11",\
+            "origin":"leftoverCard","outcome":"stillRunning","projectName":"demo","signalSentAt":800000000.5,\
+            "target":{"process":{"name":"node","pid":4242,"startTimeMicros":17}}}
+            """
+        let record = try JSONDecoder().decode(ActionRecord.self, from: Data(json.utf8))
+        #expect(record.action == .stopRequested)
+        #expect(record.target == .process(pid: 4_242, startTimeMicros: 17, name: "node"))
+        #expect(record.origin == .leftoverCard)
+        #expect(record.offered == nil)
+        #expect(record.detail == nil)
+        #expect(record.signalSentAt == Date(timeIntervalSinceReferenceDate: 800_000_000.5))
     }
 
     @Test("A refused stop request is recorded with no signalSentAt and doesn't open a force quit")
@@ -246,4 +320,11 @@ struct StopLedgerTests {
         guard case .container(let shortID, _, _, _) = container.target else { Issue.record("not a container"); return }
         #expect(shortID.count == 12)
     }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var value: Int { lock.withLock { count } }
+    func increment() { lock.withLock { count += 1 } }
 }

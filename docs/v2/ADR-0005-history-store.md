@@ -52,6 +52,33 @@
 | Permissions | folder `0700`, file `0600`; symlinked file and folder refused |
 | Live monitor | no rows before start or after stop; one per tick during a session |
 
+## Addendum (3e): action records
+
+Owner ruling (2026-10-28): the action log lives in memory; it is saved to disk only while Keep
+history is on. Brief 3e-1 builds that.
+
+- **A second writer, outside Live.** The app writes `actions` rows when a stop, force quit or
+  container stop is recorded in the session's `StopLedger` (ADR-0006 §Audit record), from scan
+  results too, but only while Keep history is on. The switch is read as each record is added: a
+  record made while it was off is never written later, and turning it on saves from that moment.
+  That write opens (and on first use creates) the file, so the file can now appear without a
+  live session. Reading saved actions in Settings never creates it.
+- **Shape:** `actions (id TEXT PRIMARY KEY, ts, action, outcome, record)`. `record` is the
+  `ActionRecord` as JSON, bound as text; `id`, `ts`, `action` and `outcome` are columns for
+  pruning, ordering and de-duplication (a record is stored once). Created with
+  `CREATE TABLE IF NOT EXISTS`, so an existing database gains it in place.
+- **What's stored:** the §Audit record fields: the action, its time and outcome, the process
+  name, PID and start time (or the container's short ID, name, image and Compose project), the
+  project *name*, where in the app it was confirmed, and a redacted reason ≤ 200 characters.
+  This is the one place the file holds process IDs: a PID plus start time names the process
+  HeatLens signalled. Still never argv, environment, paths or file contents.
+- **Bounded** like the rest: retention applies (1, 7 or 30 days), and a cap of 5,000 rows is
+  checked hourly.
+- **Delete history** removes them with everything else (the file goes). Records still in memory
+  stay listed in Settings until HeatLens quits.
+- **Shown** in Settings → "Recent actions": the newest 50 of this session's records plus the
+  saved ones, read-only.
+
 ## Options considered
 
 | Option | Against |

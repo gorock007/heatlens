@@ -1,8 +1,10 @@
 import Darwin
 import Foundation
 
-/// One stop or force-quit attempt, sent or refused (ADR-0006 §Audit record). Phase 3e persists
-/// these. It carries no argv, no environment and no path; the project appears by name only.
+/// One action the user took or backed out of: a stop, force quit or container stop, sent or
+/// refused; a confirmation cancelled; a process or project ignored (ADR-0006 §Audit record).
+/// Saved to history only while Keep history is on (ADR-0005 Addendum 3e). It carries no argv,
+/// no environment and no path; the project appears by name only.
 public struct ActionRecord: Identifiable, Equatable, Codable, Sendable {
     public enum Action: String, Codable, Sendable {
         /// SIGTERM, from `ProcessTerminator.requestStop`.
@@ -11,16 +13,23 @@ public struct ActionRecord: Identifiable, Equatable, Codable, Sendable {
         case forceQuit
         /// ADR-0007.
         case containerStop
+        /// The user chose "ignore this process/project" (brief 3e-2).
+        case ignored
+        /// A stop, force quit or container stop was offered and the user backed out at its
+        /// confirmation; `offered` says which.
+        case cancelled
     }
 
     public enum Target: Equatable, Codable, Sendable {
         case process(pid: Int32, startTimeMicros: Int64, name: String)
         case container(shortID: String, name: String, image: String, composeProject: String?)
+        /// An ignored project, by name only.
+        case project(name: String)
     }
 
     /// Where in the app the user confirmed the action.
     public enum Origin: String, Codable, Sendable {
-        case processDetail, leftoverCard, batchStop, containerDetail
+        case processDetail, leftoverCard, batchStop, containerDetail, findingCard, projectRow
     }
 
     /// Names and images are cut to this many characters.
@@ -45,10 +54,14 @@ public struct ActionRecord: Identifiable, Equatable, Codable, Sendable {
     public let outcome: String
     /// The reason for `denied`/`failed`, redacted and capped; nil otherwise.
     public let detail: String?
+    /// For `.cancelled`: the action whose confirmation the user backed out of. nil otherwise, and
+    /// in records made before 3e.
+    public let offered: Action?
 
     /// Caps every name and redacts `detail`, so no caller can store more than §Audit record allows.
     public init(id: UUID = UUID(), at: Date, action: Action, target: Target, projectName: String?,
-                origin: Origin?, confirmedAt: Date?, signalSentAt: Date?, outcome: String, detail: String?) {
+                origin: Origin?, confirmedAt: Date?, signalSentAt: Date?, outcome: String, detail: String?,
+                offered: Action? = nil) {
         self.id = id
         self.at = at
         self.action = action
@@ -59,6 +72,7 @@ public struct ActionRecord: Identifiable, Equatable, Codable, Sendable {
         self.signalSentAt = signalSentAt
         self.outcome = outcome
         self.detail = detail.map { Self.cap(Self.redacted($0), Self.detailLimit) }
+        self.offered = offered
     }
 
     /// The process this record is about, or nil for a container.
@@ -99,6 +113,8 @@ extension ActionRecord.Target {
             return .process(pid: pid, startTimeMicros: start, name: cap(name))
         case .container(let shortID, let name, let image, let project):
             return .container(shortID: String(shortID.prefix(12)), name: cap(name), image: cap(image), composeProject: project.map(cap))
+        case .project(let name):
+            return .project(name: cap(name))
         }
     }
 }
@@ -142,35 +158,45 @@ extension StopOutcome {
     }
 }
 
-/// Every stop and force-quit attempt in this app session, in memory only (ADR-0006 decision 2).
-/// `ProcessTerminator.forceQuit` reads it: no recorded SIGTERM for the same identity, no force
-/// quit. Entries older than `retention` are dropped.
+/// Every action record of this app session, in memory, the newest `capacity` of them (ADR-0006
+/// decision 2; brief 3e-1). `ProcessTerminator.forceQuit` reads it: no recorded SIGTERM for the
+/// same identity, no force quit. `onRecord` sees each record as it is added; the app uses it to
+/// save records to history while Keep history is on.
 public actor StopLedger {
-    public static let retention: TimeInterval = 10 * 60
+    public static let capacity = 500
+    /// How far back `stopRequestedAt` looks, the ledger's whole lifetime before 3e. The force-quit
+    /// offer itself expires much sooner (`ProcessTerminator.offerLifetime`), checked by the caller.
+    public static let stopLookupWindow: TimeInterval = 10 * 60
 
     private var entries: [ActionRecord] = []
+    private let onRecord: (@Sendable (ActionRecord) -> Void)?
 
-    public init() {}
-
-    public func record(_ record: ActionRecord) {
-        prune()
-        entries.append(record)
+    public init(onRecord: (@Sendable (ActionRecord) -> Void)? = nil) {
+        self.onRecord = onRecord
     }
 
-    /// When the newest SIGTERM that actually left HeatLens for exactly this identity was sent.
+    public func record(_ record: ActionRecord) {
+        entries.append(record)
+        if entries.count > Self.capacity { entries.removeFirst(entries.count - Self.capacity) }
+        onRecord?(record)
+    }
+
+    /// When the newest SIGTERM that actually left HeatLens for exactly this identity was sent,
+    /// within `stopLookupWindow`.
     public func stopRequestedAt(_ identity: ProcessIdentity) -> Date? {
-        prune()
-        return entries.last { $0.action == .stopRequested && $0.processIdentity == identity && $0.signalSentAt != nil }?.signalSentAt
+        let cutoff = Date().addingTimeInterval(-Self.stopLookupWindow)
+        return entries.last {
+            $0.action == .stopRequested && $0.processIdentity == identity && $0.at >= cutoff && $0.signalSentAt != nil
+        }?.signalSentAt
+    }
+
+    /// Every record kept, newest first.
+    public func records() -> [ActionRecord] {
+        entries.reversed()
     }
 
     /// Records decided at or after `date`, oldest first.
     public func records(since date: Date) -> [ActionRecord] {
-        prune()
-        return entries.filter { $0.at >= date }
-    }
-
-    private func prune() {
-        let cutoff = Date().addingTimeInterval(-Self.retention)
-        entries.removeAll { $0.at < cutoff }
+        entries.filter { $0.at >= date }
     }
 }

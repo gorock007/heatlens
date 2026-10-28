@@ -156,7 +156,11 @@ Results: [PHASE-2-REPORT.md](PHASE-2-REPORT.md).
 - 3d Stop a selected container: the first non-GET Docker call. **Designed** (brief 3d, 2026-10-28):
   [ADR-0007](ADR-0007-docker-container-stop.md) and [SECURITY-REVIEW-3d](SECURITY-REVIEW-3d.md);
   builds are briefs 3d-3 (core) and 3d-4 (app) in the ADR, after 3d-1/3d-2.
-- 3e Local action audit trail; ignore process/project.
+- 3e Local action audit trail; ignore process/project. **Audit trail done** (brief 3e-1): every stop,
+  force quit and container stop is an `ActionRecord` in the session's `StopLedger` (newest 500, in
+  memory until quit), saved to history's `actions` table only while Keep history is on
+  ([ADR-0005 Addendum 3e](ADR-0005-history-store.md#addendum-3e-action-records)); Settings →
+  "Recent actions". `.ignored`/`.cancelled` exist; the ignore buttons and cancel records are 3e-2.
 - Exit: reproduce the FDA multi-worker Docker test scenario.
 
 ## Phase 4 — background service and polish (P1/P2)

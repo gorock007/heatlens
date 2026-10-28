@@ -53,6 +53,7 @@ struct SettingsView: View {
 
                 MonitoringSourcesSection(settings: settings)
                 ActionsSection(settings: settings)
+                ActionLogSection(settings: settings)
 
                 VStack(alignment: .leading, spacing: 5) {
                     ExclusionEditor(
@@ -189,7 +190,7 @@ private struct HistorySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle("Keep history", isOn: $settings.keepHistory)
-            Text("Saves Live mode's updates (load, heat, swap, power, project names and folders, container and process names) on this Mac, so the timeline can look back. Never command lines or file contents. Only while Live runs.")
+            Text("Saves Live mode's updates (load, heat, swap, power, project names and folders, container and process names) on this Mac, so the timeline can look back. Never command lines or file contents. Only while Live runs. Also saves the stops, force quits and container stops you confirm, with their outcome (see Recent actions).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

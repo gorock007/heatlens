@@ -28,8 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let scanService: any ScanService
         let stopService: any ProcessStopping
         let containerStopService: any ContainerStopProviding
-        // One ledger for the session: process stops, force quits and container stops.
-        let ledger = StopLedger()
+        // One ledger for the session: process stops, force quits and container stops. Its records
+        // are saved to history only while Keep history is on (brief 3e-1).
+        let ledger = ActionLog.shared.ledger
+        ActionLog.shared.follow(settings)
         let containerStopAllowed: @MainActor @Sendable () -> Bool = { settings.canStopContainers }
         #if DEBUG
         // `-HeatLensFixtures YES`: canned results and stops that signal nothing and open no socket,
