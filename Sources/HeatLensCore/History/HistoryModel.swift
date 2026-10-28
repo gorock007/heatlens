@@ -69,6 +69,8 @@ public struct TimelineEvent: Hashable, Sendable, Identifiable {
         case expensiveCommandStarted
         case concurrentCommands
         case repeatedCommand
+        /// A concurrency burst explained in plain words (brief 3b); the full explanation lives on the tick.
+        case concurrencyExplained
     }
 
     public var id: String { "\(Int64(timestamp.timeIntervalSince1970 * 1000))-\(kind.rawValue)-\(title)" }

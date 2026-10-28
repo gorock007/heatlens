@@ -12,6 +12,9 @@ struct LiveView: View {
             if let tick = model.latest {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
+                        if !tick.explanations.isEmpty {
+                            ExplanationsCard(explanations: tick.explanations)
+                        }
                         LiveOverview(tick: tick)
                         if !tick.projects.usages.isEmpty {
                             ProjectsCard(breakdown: tick.projects, groups: tick.groups, limit: 4)

@@ -69,6 +69,9 @@ public struct LiveTick: Sendable {
     public var historyFailure: String? = nil
     /// Events found on this tick (briefs 2d, 2e).
     public var events: [TimelineEvent] = []
+    /// Concurrency bursts explained in plain words (brief 3b): recent first, at most
+    /// `ConcurrencyRules.limit`, each kept until 10 minutes after its burst ends.
+    public var explanations: [Explanation] = []
     /// This session's timeline so far, in memory: points, busiest projects and events, bounded
     /// like the trend ring.
     public var timeline: HistoryWindow = .empty
@@ -173,6 +176,7 @@ public actor LiveMonitor {
         var sequence = 0
         var historyFailure: String?
         var detector = TimelineDetector()
+        var concurrency = ConcurrencyRules()
         var timeline = (points: [HistoryPoint](), projects: [HistoryProjectPoint](), events: [TimelineEvent]())
         do {
             var previousProcesses = try processSampler.snapshot()
@@ -205,6 +209,9 @@ public actor LiveMonitor {
                                     history: history.window(for: Set((byCPU + byMemory).map(\.identity))),
                                     collectionSeconds: Self.seconds(began.duration(to: .now)), historyFailure: historyFailure)
                 tick.events = detector.events(for: tick)
+                let explained = concurrency.explanations(for: tick)
+                tick.explanations = concurrency.current
+                tick.events += explained.map { $0.timelineEvent(at: snapshot.startedAt.addingTimeInterval(snapshot.interval)) }
                 let point = HistoryRecorder.point(from: tick)
                 let projectPoints = HistoryRecorder.projectPoints(from: tick)
                 timeline.points.append(point)

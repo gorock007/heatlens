@@ -13,7 +13,6 @@ Usage band: green (5h 16% used, 11:23)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-28 11:20 · claude/claude-opus-5-5 high · term 0dea1179-8a3f-4c3c-b1aa-f12e5af4ffe2 · handoffs/briefs/2026-10-28-0940-v2-3b-concurrency-explanations.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 

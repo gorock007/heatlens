@@ -145,7 +145,9 @@ Results: [PHASE-2-REPORT.md](PHASE-2-REPORT.md).
 
 ## Phase 3 — explanations, alerts, safe actions (P1)
 
-- 3a Concurrency rules ("three Docker integration tests began within 10 s across two agent trees").
+- 3a Concurrency rules ("three Docker integration tests began within 10 s across two agent trees"). ✅
+  **Did** (brief 3b): `ConcurrencyRules` → `Explanation` (observations, confidence, uncertainty,
+  advice only) on `LiveTick.explanations` and the timeline; "What's going on" card in Live. FDA test passes.
 - 3b Alert policies with hysteresis and cooldown (CPU, thermal, swap, memory, containers).
 - 3c Force quit after a *separate* confirmation (new ADR; v1 omitted it on purpose).
 - 3d Stop a selected container: the first non-GET Docker call (new ADR + security review).

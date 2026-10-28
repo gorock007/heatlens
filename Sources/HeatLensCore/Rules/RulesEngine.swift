@@ -149,6 +149,11 @@ private struct RankedFinding {
     let impact: Double
 }
 
+extension RulesEngine {
+    /// Coding agents by process or executable name; also used by `ConcurrencyRules` (brief 3b).
+    static let agentNames: Set<String> = ["claude", "claude.exe", "codex", "opencode", "gemini", "aider", "cursor-agent"]
+}
+
 private extension RulesEngine {
     var activeWorkKinds: Set<String> {
         ["next dev", "vite", "astro", "webpack", "turbo", "vitest", "jest", "pytest", "tsc --watch", "claude", "opencode", "gemini", "codex",
@@ -305,7 +310,6 @@ private extension RulesEngine {
 
     /// Ranks below every other finding (heat first, PRD §7): their impact is never negative.
     static let awakeImpact = -1.0
-    static let agentNames: Set<String> = ["claude", "claude.exe", "codex", "opencode", "gemini", "aider", "cursor-agent"]
     static let devToolNames: Set<String> = ["node", "npm", "npx", "pnpm", "yarn", "bun", "deno", "python", "python3",
                                             "make", "cargo", "go", "swift", "xcodebuild", "gradle", "java", "ruby"]
 
