@@ -123,7 +123,7 @@ history is on (ADR-0005 Addendum 3e). Records decode with or without the fields 
 | `target` | `.process(pid, startTimeMicros, name ≤ 80 chars)`, `.container(shortID 12 hex, name ≤ 80, image ≤ 80, composeProject?)` or `.project(name ≤ 80)` (an ignored project, by name only) |
 | `projectName` | The attributed project's name, or nil; never its directory |
 | `origin` | `processDetail`, `leftoverCard`, `batchStop`, `containerDetail`, `findingCard`, `projectRow` |
-| `confirmedAt` | When the user pressed the destructive button; nil for `cancelled` and `ignored` |
+| `confirmedAt` | When the user pressed the destructive button, or the Ignore button for `ignored`; nil for `cancelled` |
 | `signalSentAt` | When the signal or request left HeatLens, or nil when refused |
 | `outcome` | The `StopOutcome` (or `ContainerStopOutcome`) case name; `cancelled` or `ignored` for those actions |
 | `detail` | The reason text for `denied`/`failed`, ≤ 200 chars, passed through `Redactor.text` |
