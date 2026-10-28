@@ -8,11 +8,12 @@ public enum StopEligibility: Equatable, Sendable {
     case denied(reason: String)
 }
 
-/// What one `requestStop` call did.
+/// What one `requestStop` or `forceQuit` call did.
 public enum StopOutcome: Equatable, Sendable {
-    /// SIGTERM sent and the process exited within the wait.
+    /// The signal was sent and the process exited within the wait.
     case stopped
-    /// SIGTERM sent, still alive after the wait. Never escalated.
+    /// The signal was sent and the process is still alive after the wait. Never escalated:
+    /// only a separate `forceQuit` call can follow a `requestStop`.
     case stillRunning
     /// Gone before anything was sent.
     case alreadyExited
@@ -24,13 +25,15 @@ public enum StopOutcome: Equatable, Sendable {
     case failed(errno: Int32)
 }
 
-/// Sends at most one SIGTERM to one validated process instance (FR-09).
+/// Sends at most one signal per call to one validated process instance (FR-09, ADR-0006).
 ///
-/// Invariants, each enforced in `requestStop`: the target is exactly the `(pid, startTime)`
-/// passed in, re-read from the kernel immediately before signalling; the signal is SIGTERM and
-/// nothing stronger, ever; the pid is > 1, never a process group; one pid per call; no shell
-/// or command-line tool. A process that ignores SIGTERM is reported as `.stillRunning` and
-/// left alone.
+/// Invariants, each enforced in `signalOnce`, which both entry points go through: the target is
+/// exactly the `(pid, startTime)` passed in, re-read from the kernel immediately before
+/// signalling; the pid is > 1, never a process group, never its children; one pid per call; no
+/// shell or command-line tool. The signal is SIGTERM from `requestStop`; the uncatchable kill
+/// signal comes only from `forceQuit`, which needs a SIGTERM recorded in the `StopLedger` for the
+/// same identity 5 to 60 s earlier. A process that ignores SIGTERM is reported as `.stillRunning`
+/// and left alone until the user separately confirms a force quit.
 public struct ProcessTerminator: Sendable {
     /// Names macOS needs running; matched against the process name and the executable's file name.
     static let protectedNames: Set<String> = [
@@ -46,6 +49,10 @@ public struct ProcessTerminator: Sendable {
     static let pollInterval: Duration = .milliseconds(50)
     /// Longer `wait` values are clamped to this.
     static let maximumWait: TimeInterval = 60
+    /// `forceQuit` never signals sooner than this after the recorded SIGTERM; it waits out the rest.
+    public static let minimumGraceAfterStop: TimeInterval = 5
+    /// `forceQuit` refuses once the recorded SIGTERM is older than this.
+    public static let offerLifetime: TimeInterval = 60
 
     public init() {}
 
@@ -88,49 +95,125 @@ public struct ProcessTerminator: Sendable {
         }
     }
 
-    /// Revalidates identity, owner and denylist right before kill(pid, SIGTERM); then polls until exit or `wait`.
-    public func requestStop(_ identity: ProcessIdentity, wait: TimeInterval = 3) async -> StopOutcome {
+    /// Revalidates identity, owner and denylist right before kill(pid, SIGTERM); then polls until
+    /// exit or `wait`. With a `ledger`, the attempt is recorded there, sent or refused.
+    public func requestStop(_ identity: ProcessIdentity, wait: TimeInterval = 3,
+                            ledger: StopLedger? = nil, context: ActionContext? = nil) async -> StopOutcome {
+        let attempt = await signalOnce(SIGTERM, to: identity, wait: wait)
+        await ledger?.record(attempt.record(.stopRequested, identity, context))
+        return attempt.outcome
+    }
+
+    /// Force quit (ADR-0006): only for an identity `ledger` holds a sent SIGTERM for, no sooner
+    /// than `minimumGraceAfterStop` after it (waits the rest) and no later than `offerLifetime`;
+    /// then the same revalidation as `requestStop`, one kill signal to the pid alone, and a poll
+    /// until exit or `wait`. Every attempt is recorded in `ledger`.
+    public func forceQuit(_ identity: ProcessIdentity, ledger: StopLedger, wait: TimeInterval = 2,
+                          context: ActionContext? = nil) async -> StopOutcome {
+        let attempt = await forceQuitAttempt(identity, ledger: ledger, wait: wait)
+        await ledger.record(attempt.record(.forceQuit, identity, context))
+        return attempt.outcome
+    }
+
+    private func forceQuitAttempt(_ identity: ProcessIdentity, ledger: StopLedger, wait: TimeInterval) async -> Attempt {
+        guard identity.pid > 1 else { return Attempt(refused: .denied(reason: Self.corePIDReason(identity.pid))) }
+        guard let stopSentAt = await ledger.stopRequestedAt(identity) else {
+            return Attempt(refused: .denied(reason: "No stop request was sent to this process in this session, so HeatLens won't force quit it. Request a stop first."))
+        }
+        let elapsed = max(Date().timeIntervalSince(stopSentAt), 0)
+        if elapsed > Self.offerLifetime {
+            return Attempt(refused: .denied(reason: "It's been too long since the stop request; request a stop again."))
+        }
+        let remaining = Self.minimumGraceAfterStop - elapsed
+        if remaining > 0 {
+            do { try await Task.sleep(for: .seconds(remaining)) } catch {
+                return Attempt(refused: .denied(reason: "The force quit was cancelled before anything was sent."))
+            }
+        }
+        return await signalOnce(SIGKILL, to: identity, wait: wait)
+    }
+
+    /// The v1 sequence both entry points share: identity, live owner and eligibility, a last
+    /// identity read, exactly one `kill` to this positive pid, then a poll for exit.
+    private func signalOnce(_ signal: Int32, to identity: ProcessIdentity, wait: TimeInterval) async -> Attempt {
         let pid = identity.pid
-        guard pid > 1 else { return .denied(reason: "This is a core macOS process (PID \(pid)). HeatLens never stops it.") }
+        guard pid > 1 else { return Attempt(refused: .denied(reason: Self.corePIDReason(pid))) }
+        let unreadable = StopOutcome.denied(reason: "macOS didn't let HeatLens re-check this process, so nothing was sent. Use Activity Monitor if you need to stop it.")
 
         // 1. The pid still names the same process instance.
+        let name: String
         switch Self.liveState(of: identity) {
-        case .exited: return .alreadyExited
-        case .replaced: return .identityChanged
-        case .unreadable:
-            return .denied(reason: "macOS didn't let HeatLens re-check this process, so nothing was sent. Use Activity Monitor if you need to stop it.")
+        case .exited: return Attempt(refused: .alreadyExited)
+        case .replaced: return Attempt(refused: .identityChanged)
+        case .unreadable: return Attempt(refused: unreadable)
         case .same(let bsd):
+            name = bsd.name
             // 2. Every eligibility rule, against what the kernel says now rather than the scan.
             if bsd.uid == 0 || bsd.uid != getuid() {
-                return .denied(reason: "This process is no longer owned by you, so nothing was sent.")
+                return Attempt(refused: .denied(reason: "This process is no longer owned by you, so nothing was sent."), name: name)
             }
             if case .denied(let reason) = eligibility(of: Self.liveSample(identity, bsd: bsd)) {
-                return .denied(reason: reason)
+                return Attempt(refused: .denied(reason: reason), name: name)
             }
         }
 
         // 3. Last identity check, as close to the signal as the API allows.
         switch Self.liveState(of: identity) {
-        case .exited: return .alreadyExited
-        case .replaced: return .identityChanged
-        case .unreadable:
-            return .denied(reason: "macOS didn't let HeatLens re-check this process, so nothing was sent. Use Activity Monitor if you need to stop it.")
+        case .exited: return Attempt(refused: .alreadyExited, name: name)
+        case .replaced: return Attempt(refused: .identityChanged, name: name)
+        case .unreadable: return Attempt(refused: unreadable, name: name)
         case .same: break
         }
 
         // 4. Exactly one signal, to exactly this positive pid.
-        if kill(pid, SIGTERM) != 0 {
+        if kill(pid, signal) != 0 {
             let code = errno
-            return code == ESRCH ? .alreadyExited : .failed(errno: code)
+            return Attempt(refused: code == ESRCH ? .alreadyExited : .failed(errno: code), name: name)
         }
+        let sentAt = Date()
 
         // 5. Watch for exit; never signal again. A cancelled task stops watching early.
         let deadline = ContinuousClock.now + .seconds(wait.isFinite ? min(max(wait, 0), Self.maximumWait) : 0)
         while true {
-            if Self.hasExited(identity) { return .stopped }
-            if ContinuousClock.now >= deadline || Task.isCancelled { return .stillRunning }
+            if Self.hasExited(identity) { return Attempt(outcome: .stopped, name: name, decidedAt: sentAt, signalSentAt: sentAt) }
+            if ContinuousClock.now >= deadline || Task.isCancelled {
+                return Attempt(outcome: .stillRunning, name: name, decidedAt: sentAt, signalSentAt: sentAt)
+            }
             try? await Task.sleep(for: Self.pollInterval)
         }
+    }
+
+    static func corePIDReason(_ pid: Int32) -> String {
+        "This is a core macOS process (PID \(pid)). HeatLens never stops it."
+    }
+}
+
+/// What one `signalOnce` or refused force quit did, before it becomes an `ActionRecord`.
+private struct Attempt {
+    let outcome: StopOutcome
+    /// The kernel's name for the process, when HeatLens read it.
+    let name: String?
+    let decidedAt: Date
+    let signalSentAt: Date?
+
+    init(outcome: StopOutcome, name: String?, decidedAt: Date, signalSentAt: Date?) {
+        self.outcome = outcome
+        self.name = name
+        self.decidedAt = decidedAt
+        self.signalSentAt = signalSentAt
+    }
+
+    /// Nothing was sent.
+    init(refused outcome: StopOutcome, name: String? = nil) {
+        self.init(outcome: outcome, name: name, decidedAt: Date(), signalSentAt: nil)
+    }
+
+    func record(_ action: ActionRecord.Action, _ identity: ProcessIdentity, _ context: ActionContext?) -> ActionRecord {
+        ActionRecord(at: decidedAt, action: action,
+                     target: .process(pid: identity.pid, startTimeMicros: identity.startTimeMicros,
+                                      name: name ?? context?.processName ?? ""),
+                     projectName: context?.projectName, origin: context?.origin, confirmedAt: context?.confirmedAt,
+                     signalSentAt: signalSentAt, outcome: outcome.caseName, detail: outcome.recordDetail)
     }
 }
 

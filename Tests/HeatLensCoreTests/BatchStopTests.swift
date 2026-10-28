@@ -38,6 +38,20 @@ struct BatchStopTests {
         ])
     }
 
+    @Test("A stopper that always returns .stillRunning: every item finishes .stillRunning, one call each, never escalated")
+    func neverEscalates() async {
+        let calls = Recorder<ProcessIdentity>()
+        let batch = BatchStop { identity in
+            calls.append(identity)
+            return .stillRunning
+        }
+
+        let result = await batch.run(ids)
+
+        #expect(result == Array(repeating: .finished(.stillRunning), count: ids.count))
+        #expect(calls.values == ids)
+    }
+
     @Test("Each stop finishes before the next one starts")
     func sequential() async {
         let log = Recorder<String>()
