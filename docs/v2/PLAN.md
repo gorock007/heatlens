@@ -176,6 +176,13 @@ Results: [PHASE-2-REPORT.md](PHASE-2-REPORT.md).
 LaunchAgent helper with XPC (new ADR), adaptive sampling, watchlists, incident export, structured
 logs, crash recovery, Jarvis integration through the existing stdio MCP server.
 
+**Designed** (brief p4-design, 2026-10-28): [ADR-0008](ADR-0008-background-helper.md) (background
+monitoring in the app for v2.0, a LaunchAgent + XPC helper for v2.1; the helper never signals or
+posts notifications) and [PHASE-4-PLAN.md](PHASE-4-PLAN.md) (briefs 4a–4l in order, and the nine
+owner decisions of 2026-10-28). v2.0: 4a adaptive sampling → 4b/4c background monitoring → 4d
+logs → 4e crash recovery; 4f/4g watchlists; 4h/4i incident export. v2.1: 4j/4k helper → 4l MCP
+live tools. Auto-update is deferred (click-only check stays).
+
 ## Owner decisions (2026-10-27)
 
 1. **CPU/GPU power.** Don't bundle macmon. Per-process CPU energy from a public API instead
