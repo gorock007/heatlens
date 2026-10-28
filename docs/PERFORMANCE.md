@@ -124,14 +124,21 @@ The scan engine without the UI, release build, default 5 s sample interval, thre
    | `/usr/bin/time -l .build/release/heatlens-probe --background 900` | 904.6 s | 11.21 s | 1.24% of one core | all 173 planned 5 s (incident); median span 5.2 s | median 104.7 ms, max 1,513 ms | 20.6 MB |
    | `/usr/bin/time -l .build/release/heatlens-probe --background 400 --assume-low-power` | 426.3 s | 0.32 s | 0.075% of one core | all 4 planned 120 s (Low Power Mode); median span 127.3 s | median 106.2 ms, max 163.6 ms | 12.4 MB |
 
-   1. **The idle-on-power target was not measured.** The Mac was never idle: half the ticks had
-      all cores at least 60% busy, and the run saw 24 expensive-command and 8 test-run starts.
-      Each of those is an incident trigger, so every interval was the incident cadence (5 s on
-      power). That run does show the incident case, and it is within its ≤ 2% budget.
-      Per-tick CPU there was about 65 ms (11.21 s / 173 ticks). At 30 s that would be about 0.22%
-      of one core, but that is an extrapolation, not a measurement. To measure it, run the
-      900 s command again on a quiet Mac: the summary line should read `reasons idle …` with a
-      median span near 30 s.
+   1. **Idle cadence: about 0.3–0.4% of one core, at or slightly over the ≤ 0.3% target.**
+       - The first run above never went idle. Every interval was the incident cadence (5 s), and
+         it stayed within the ≤ 2% incident budget at about 65 ms of CPU per tick.
+       - A second run of the same 900 s command on 2026-10-28 was **on battery**. Other agents'
+         builds still started now and then, so 38 ticks were incident (10 s) and 8 were idle
+         (60 s). It took 2.64 s of CPU in 907 s, which is **0.29%** of one core overall, with a
+         median tick of 102 ms, a 14.5 MB peak footprint and 19.8 MB maximum RSS.
+       - At about 100 ms per tick, 60 s idle on battery works out to about 0.17%, inside its
+         ≤ 0.2% budget.
+       - The real app, idle on AC with the panel closed (4c click-through), measured **0.22 s of
+         CPU per 60 s, or 0.37%** of one core, with `ps -o time=` taken every 30 s.
+       - So on power the idle cadence is a little over the ≤ 0.3% target. That figure includes the
+         app's own baseline, not only sampling. Cutting per-tick cost (it is mostly the process
+         table and per-project attribution) is a follow-up. A fully quiet on-power run of the
+         900 s command is still worth repeating.
    2. Low Power Mode is within its ≤ 0.1% budget, and it stayed at 120 s while the Mac was busy:
       Low Power Mode is never fast.
    3. Spans run longer than planned: 5.1–5.5 s for 5 s, and 126.7–128.2 s for 120 s.
