@@ -6,6 +6,10 @@ import Testing
 private struct FakeTransport: DockerTransport {
     let handler: @Sendable (String) throws -> UnixSocketHTTP.Response
     func get(_ path: String) throws -> UnixSocketHTTP.Response { try handler(path) }
+    func post(_ path: String, timeout: TimeInterval) throws -> UnixSocketHTTP.Response {
+        Issue.record("the sampler sent a POST to \(path)")
+        throw UnixSocketHTTP.Failure.invalidPath
+    }
 }
 
 private func ok(_ json: String) -> UnixSocketHTTP.Response {
@@ -53,13 +57,20 @@ private final class PathLog: @unchecked Sendable {
 struct DockerEngineTests {
     // MARK: Request building
 
-    @Test("Requests are GET only, to allowlisted characters; CR, LF, spaces and non-ASCII are refused")
+    @Test("Requests are GET, plus POST to the stop path only, to allowlisted characters; CR, LF, spaces and non-ASCII are refused")
     func requestBuilding() throws {
         let request = String(decoding: try UnixSocketHTTP.request(path: "/v1.51/containers/json?all=1"), as: UTF8.self)
         #expect(request.hasPrefix("GET /v1.51/containers/json?all=1 HTTP/1.1\r\n"))
         #expect(request.hasSuffix("Connection: close\r\n\r\n"))
         for bad in ["containers/json", "/a b", "/a\r\nX-Evil: 1", "/é", "/a#b", "/a%0d", "/a;rm"] {
             #expect(throws: UnixSocketHTTP.Failure.invalidPath) { try UnixSocketHTTP.request(path: bad) }
+            #expect(throws: UnixSocketHTTP.Failure.invalidPath) { try UnixSocketHTTP.request(method: .post, path: bad) }
+        }
+        let stop = String(decoding: try UnixSocketHTTP.request(method: .post, path: "/v1.51/containers/\(dbID)/stop?t=10"), as: UTF8.self)
+        #expect(stop.hasPrefix("POST /v1.51/containers/\(dbID)/stop?t=10 HTTP/1.1\r\nContent-Length: 0\r\n"))
+        #expect(stop.hasSuffix("Connection: close\r\n\r\n"))
+        for other in ["/v1.51/containers/json?all=1", "/_ping", "/v1.51/containers/\(dbID)/kill", "/v1.51/containers/\(dbID)/json"] {
+            #expect(throws: UnixSocketHTTP.Failure.invalidPath) { try UnixSocketHTTP.request(method: .post, path: other) }
         }
     }
 
@@ -78,7 +89,10 @@ struct DockerEngineTests {
         let id = try #require(DockerContainerID(dbID))
         #expect(DockerEndpoint.containers(api: api).path == "/v1.51/containers/json?all=1")
         #expect(DockerEndpoint.stats(api: api, id: id).path == "/v1.51/containers/\(dbID)/stats?stream=false&one-shot=true")
-        for endpoint in [DockerEndpoint.ping, .version, .containers(api: api), .stats(api: api, id: id)] {
+        #expect(DockerEndpoint.inspect(api: api, id: id).path == "/v1.51/containers/\(dbID)/json")
+        #expect(DockerEndpoint.stop(api: api, id: id, timeout: 10).path == "/v1.51/containers/\(dbID)/stop?t=10")
+        for endpoint in [DockerEndpoint.ping, .version, .containers(api: api), .stats(api: api, id: id), .inspect(api: api, id: id),
+                         .stop(api: api, id: id, timeout: 10)] {
             #expect(UnixSocketHTTP.isAllowedPath(endpoint.path))
         }
     }

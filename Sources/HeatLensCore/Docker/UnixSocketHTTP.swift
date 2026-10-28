@@ -1,10 +1,15 @@
 import Darwin
 import Foundation
 
-/// A minimal HTTP/1.1 GET over an `AF_UNIX` socket, for the local Docker Engine API.
-/// `URLSession` cannot reach a Unix socket. There is deliberately no way to send any verb but
-/// GET, a body, or custom headers (docs/v2/ADR-0002).
+/// A minimal HTTP/1.1 client over an `AF_UNIX` socket, for the local Docker Engine API.
+/// `URLSession` cannot reach a Unix socket. It sends GET, and POST to one container-stop path
+/// only; never a body or custom headers (docs/v2/ADR-0002, ADR-0007).
 enum UnixSocketHTTP {
+    enum Method: Sendable {
+        case get
+        case post
+    }
+
     struct Response: Equatable, Sendable {
         let status: Int
         let headers: [String: String]
@@ -33,15 +38,39 @@ enum UnixSocketHTTP {
         }
     }
 
-    static func request(path: String) throws -> Data {
+    /// The one path a POST may go to: `docker stop` for one container by its full ID, with a
+    /// whole-second timeout (ADR-0007 threat 2).
+    static func isAllowedStopPath(_ path: String) -> Bool {
+        path.wholeMatch(of: /\/v1\.\d{1,3}\/containers\/[0-9a-f]{64}\/stop\?t=\d{1,3}/) != nil
+    }
+
+    static func request(method: Method = .get, path: String) throws -> Data {
         guard isAllowedPath(path) else { throw Failure.invalidPath }
-        return Data("GET \(path) HTTP/1.1\r\nHost: docker\r\nUser-Agent: HeatLens\r\nAccept: application/json\r\nConnection: close\r\n\r\n".utf8)
+        let head: String
+        switch method {
+        case .get:
+            head = "GET \(path) HTTP/1.1\r\n"
+        case .post:
+            guard isAllowedStopPath(path) else { throw Failure.invalidPath }
+            head = "POST \(path) HTTP/1.1\r\nContent-Length: 0\r\n"
+        }
+        return Data((head + "Host: docker\r\nUser-Agent: HeatLens\r\nAccept: application/json\r\nConnection: close\r\n\r\n").utf8)
     }
 
     /// Blocks for at most `timeout` seconds in total.
     static func get(path: String, socketPath: String, timeout: TimeInterval = 2,
                     maxResponseBytes: Int = defaultMaxResponseBytes) throws -> Response {
-        let request = try request(path: path)
+        try perform(try request(path: path), socketPath: socketPath, timeout: timeout, maxResponseBytes: maxResponseBytes)
+    }
+
+    /// A POST to `isAllowedStopPath` only, with an empty body; any other path throws before
+    /// `connect`. Blocks for at most `timeout` seconds in total.
+    static func post(path: String, socketPath: String, timeout: TimeInterval,
+                     maxResponseBytes: Int = defaultMaxResponseBytes) throws -> Response {
+        try perform(try request(method: .post, path: path), socketPath: socketPath, timeout: timeout, maxResponseBytes: maxResponseBytes)
+    }
+
+    private static func perform(_ request: Data, socketPath: String, timeout: TimeInterval, maxResponseBytes: Int) throws -> Response {
         let deadline = Date().addingTimeInterval(timeout)
         let fd = try connect(socketPath)
         defer { close(fd) }

@@ -187,6 +187,9 @@ struct DockerContainerID: Hashable, Sendable {
         }
         value = raw
     }
+
+    /// The full 64-character ID; a stop is addressed only by this (ADR-0007 decision 1).
+    var isFull: Bool { value.utf8.count == 64 }
 }
 
 struct DockerAPIVersion: Comparable, CustomStringConvertible, Sendable {
@@ -213,19 +216,30 @@ struct DockerAPIVersion: Comparable, CustomStringConvertible, Sendable {
     static func < (lhs: Self, rhs: Self) -> Bool { (lhs.major, lhs.minor) < (rhs.major, rhs.minor) }
 }
 
-/// Every request HeatLens can make. There is no other way to build a path.
+/// Every request HeatLens can make. There is no other way to build a path. `stop` is the only
+/// one sent as a POST (ADR-0007).
 enum DockerEndpoint {
     case ping
     case version
     case containers(api: DockerAPIVersion)
     case stats(api: DockerAPIVersion, id: DockerContainerID)
+    case inspect(api: DockerAPIVersion, id: DockerContainerID)
+    case stop(api: DockerAPIVersion, id: DockerContainerID, timeout: Int)
 
+    /// `docker stop`'s `t` is clamped to this range.
+    static let stopTimeoutRange = 0...120
+
+    /// A `stop` timeout is clamped to `stopTimeoutRange`. A `stop` with a short ID gives a path
+    /// `UnixSocketHTTP.isAllowedStopPath` refuses, so it can't be sent.
     var path: String {
         switch self {
         case .ping: "/_ping"
         case .version: "/version"
         case .containers(let api): "/v\(api)/containers/json?all=1"
         case .stats(let api, let id): "/v\(api)/containers/\(id.value)/stats?stream=false&one-shot=true"
+        case .inspect(let api, let id): "/v\(api)/containers/\(id.value)/json"
+        case .stop(let api, let id, let timeout):
+            "/v\(api)/containers/\(id.value)/stop?t=\(min(max(timeout, Self.stopTimeoutRange.lowerBound), Self.stopTimeoutRange.upperBound))"
         }
     }
 }
@@ -234,6 +248,8 @@ enum DockerEndpoint {
 
 protocol DockerTransport: Sendable {
     func get(_ path: String) throws -> UnixSocketHTTP.Response
+    /// Only `UnixSocketHTTP.isAllowedStopPath` paths; only `ContainerStopper` calls it.
+    func post(_ path: String, timeout: TimeInterval) throws -> UnixSocketHTTP.Response
 }
 
 struct UnixSocketTransport: DockerTransport {
@@ -242,6 +258,10 @@ struct UnixSocketTransport: DockerTransport {
 
     func get(_ path: String) throws -> UnixSocketHTTP.Response {
         try UnixSocketHTTP.get(path: path, socketPath: socketPath, timeout: timeout)
+    }
+
+    func post(_ path: String, timeout: TimeInterval) throws -> UnixSocketHTTP.Response {
+        try UnixSocketHTTP.post(path: path, socketPath: socketPath, timeout: timeout)
     }
 }
 
@@ -290,6 +310,69 @@ enum DockerSocketLocator {
         guard fstatat(AT_FDCWD, path, &info, 0) == 0 else { return nil }
         return (info.st_mode, info.st_uid)
     }
+
+    /// Why a socket that is fine for reads may not carry a container stop (ADR-0007 decision 4).
+    enum StopRefusal: Error, Equatable {
+        /// The reads use a `DOCKER_HOST` socket: Colima, OrbStack, Podman are untested.
+        case dockerHost
+        /// Not one of Docker Desktop's two paths, or a symlink that resolves elsewhere.
+        case notDockerDesktop(String)
+        /// Missing, not a socket, or not owned by this user (root included).
+        case notOwned(String)
+
+        var reason: String {
+            switch self {
+            case .dockerHost, .notDockerDesktop: "Stopping is only supported through Docker Desktop's socket for now."
+            case .notOwned: "HeatLens only stops containers through a Docker socket you own."
+            }
+        }
+    }
+
+    /// The paths a stop may go through, and the targets a symlink there may resolve to.
+    static func stopPaths(home: String) -> [String] {
+        [home + "/.docker/run/docker.sock", "/var/run/docker.sock", "/private/var/run/docker.sock"]
+    }
+
+    /// Decision 4: `path` (what `locate` chose for reads) carries a stop only when it did not
+    /// come from `DOCKER_HOST`, is one of Docker Desktop's two paths, a symlink there resolves to
+    /// one of them again, and the socket it ends at is owned by `currentUser` (not root).
+    static func stopPolicy(for path: String, environment: [String: String], home: String,
+                           lstat linkStatus: (String) -> (mode: mode_t, owner: uid_t)? = Self.linkStatus,
+                           realpath resolve: (String) -> String? = Self.resolvedPath,
+                           currentUser: uid_t = getuid()) -> Result<String, StopRefusal> {
+        if let host = environment["DOCKER_HOST"], host.hasPrefix("unix://"), String(host.dropFirst("unix://".count)) == path {
+            return .failure(.dockerHost)
+        }
+        let allowed = stopPaths(home: home)
+        guard allowed.prefix(2).contains(path) else { return .failure(.notDockerDesktop(path)) }
+        guard var info = linkStatus(path) else { return .failure(.notOwned(path)) }
+        var socket = path
+        if info.mode & S_IFMT == S_IFLNK {
+            guard let target = resolve(path), allowed.contains(target) || resolve(allowed[0]) == target else {
+                return .failure(.notDockerDesktop(path))
+            }
+            guard let targetInfo = linkStatus(target) else { return .failure(.notOwned(target)) }
+            socket = target
+            info = targetInfo
+        }
+        guard info.mode & S_IFMT == S_IFSOCK, info.owner == currentUser, currentUser != 0 else {
+            return .failure(.notOwned(socket))
+        }
+        return .success(socket)
+    }
+
+    /// Does not follow a symlink in the last component.
+    static func linkStatus(_ path: String) -> (mode: mode_t, owner: uid_t)? {
+        var info = Darwin.stat()
+        guard Darwin.lstat(path, &info) == 0 else { return nil }
+        return (info.st_mode, info.st_uid)
+    }
+
+    static func resolvedPath(_ path: String) -> String? {
+        guard let resolved = Darwin.realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
 }
 
 // MARK: - Engine JSON (fields HeatLens reads; everything else is ignored)
@@ -318,6 +401,48 @@ struct DockerContainerSummary: Decodable, Sendable {
     var shortID: String { String(Id.prefix(12)) }
     var bindSources: [String] {
         (Mounts ?? []).compactMap { $0.Type == "bind" ? $0.Source : nil }.filter { $0.hasPrefix("/") }
+    }
+}
+
+/// `GET /containers/{id}/json`, only the fields ADR-0007 decision 3 reads.
+struct DockerContainerInspect: Decodable, Sendable {
+    struct StateInfo: Decodable, Sendable {
+        let Status: String
+        let StartedAt: String?
+    }
+    struct ConfigInfo: Decodable, Sendable {
+        /// Seconds; nil means the Engine's default (10).
+        let StopTimeout: Int?
+        let StopSignal: String?
+        let Labels: [String: String]?
+    }
+    struct HostConfigInfo: Decodable, Sendable {
+        struct RestartPolicyInfo: Decodable, Sendable { let Name: String? }
+        let RestartPolicy: RestartPolicyInfo?
+    }
+
+    let Id: String
+    /// With a leading `/`.
+    let Name: String
+    /// RFC 3339 with nanoseconds, e.g. `2026-10-27T10:00:13.123456789Z`.
+    let Created: String
+    let State: StateInfo
+    let Config: ConfigInfo?
+    let HostConfig: HostConfigInfo?
+
+    var name: String { Name.hasPrefix("/") ? String(Name.dropFirst()) : Name }
+
+    /// `Created` as whole Unix seconds (the list's precision), or nil when it doesn't parse.
+    var createdSeconds: Int64? {
+        // ISO8601DateFormatter doesn't take nine fractional digits; drop them, keep the zone.
+        var text = Created
+        if let dot = text.firstIndex(of: ".") {
+            let zone = text[dot...].firstIndex { $0 == "Z" || $0 == "+" || $0 == "-" } ?? text.endIndex
+            text.removeSubrange(dot..<zone)
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: text).map { Int64($0.timeIntervalSince1970.rounded(.down)) }
     }
 }
 
