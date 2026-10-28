@@ -13,7 +13,6 @@ Usage band: green (5h 16% used, 11:23)
 <!-- - <date> · <slug> · Q1 …  (batched from worker handoffs; remove when answered and passed back) -->
 
 ## Running workers
-- 2026-10-28 11:48 · claude/fable high · term 21ca30ac-68bf-4a54-9738-a7635c8d8b8a · handoffs/briefs/2026-10-28-1400-v2-3d-safe-actions-design.md
 <!-- `jarvis spawn` adds: - <date HH:MM> · claude/claude-opus-5-5 high · term <id> · handoffs/briefs/<file>.md -->
 <!-- `jarvis merge` removes the line -->
 
@@ -21,6 +20,7 @@ Usage band: green (5h 16% used, 11:23)
 <!-- - handoff to review: handoffs/<file>.md · migration to apply · release to cut -->
 
 ## To-do
+- Flaky: RedactorTests '1,000 processes … under a second' fails (1.1–2.1 s) when the Mac is under load (seen twice 2026-10-28); passes at 0.5 s idle. Loosen or move behind the suite lock in a future brief.
 - At v2 release: site copy says no history (site/index.html ~249 'no background monitoring and no history', ~432 'nothing is stored after you quit'). True for v1.2.2; must change when v2 (Keep history) ships.
 - v1.2.2 RELEASED 2026-10-28 (https://github.com/gorock007/heatlens/releases/tag/v1.2.2, main 59a7a98): ring app icon + menu-bar glyph; site Price and "What it can't tell you" sections + Limits nav link removed (live). releases/latest serves 1.2.2.
 - v2 (branch run-jarvis-project-7dc121ed tracks origin/main; v2 pushed to main 2026-10-28 after merging v1.2.2 — unreleased, releases are manual): Phases 0–2 done (commits a48f55c..b5369cf, outside the handoff flow). Phase 3 in progress per docs/v2/PHASE-2-REPORT.md 'Next: Phase 3 brief': 3a click-through merged (49f8324; 2 gaps → 3a-fixes worker), 3b concurrency explanations merged (0e4d555); 3a fixes 876e8c4; projects in reports/MCP c294794; 3c alert policies merged 3d7ab02 (Live-only: Live stops when the panel closes, so alerts need a detached panel until Phase 4; HeatLensCore.Alert clashes with SwiftUI.Alert, rename to LiveAlert optional); 3d design (ADR-0006 force quit, ADR-0007 container stop) running on fable; user rulings 2026-10-28: container stop ships in v2 behind switch 'Allow stopping a container' (off); force quit behind switch (off) + separate confirmation; container stop = docker stop (POST stop, t=StopTimeout|10); container stop from scan results only, never Live; then 3d builds from the ADRs' Build briefs, then 3e audit trail + ignore, then 3d safe actions (ADRs + security review first: force quit after separate confirmation; stop one selected container), 3e audit trail + ignore. Exit: FDA multi-worker Docker scenario.
