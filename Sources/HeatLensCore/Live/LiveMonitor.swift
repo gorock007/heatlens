@@ -143,6 +143,9 @@ public actor LiveMonitor {
         sessionID += 1
         let id = sessionID
         mode = configuration.sampling
+        HeatLensLog.notice(.live, "session started", ["adaptive": .flag(Self.isAdaptive(configuration.sampling)),
+                                                     "history": .flag(configuration.history != nil),
+                                                     "alerts": .flag(configuration.alerts.isEnabled)])
         let (stream, continuation) = AsyncStream<LiveEvent>.makeStream(bufferingPolicy: .bufferingNewest(2))
         self.continuation = continuation
         continuation.onTermination = { [weak self] _ in
@@ -155,6 +158,7 @@ public actor LiveMonitor {
     }
 
     public func stop() {
+        if session != nil { HeatLensLog.notice(.live, "session stopped") }
         session?.cancel()
         sleeper?.cancel()
         session = nil
@@ -260,6 +264,7 @@ public actor LiveMonitor {
                 tick.events += explained.map { $0.timelineEvent(at: snapshot.startedAt.addingTimeInterval(snapshot.interval)) }
                 tick.plannedInterval = planned
                 tick.alerts = alertEvaluator.alerts(for: tick)
+                for alert in tick.alerts { Self.log(alert, configuration: configuration.alerts) }
                 tick.events += tick.alerts.map(\.timelineEvent)
                 let incident = incidents.update(tick, alertsActive: alertEvaluator.isActive)
                 tick.sampling = decision(power: hardware.power, incident: incident)
@@ -290,6 +295,7 @@ public actor LiveMonitor {
                 previousDocker = dockerReading
 
                 if let limit = configuration.autoPauseAfter, Self.seconds(startedAt.duration(to: .now)) >= limit {
+                    HeatLensLog.notice(.live, "session auto-paused", ["after": .seconds(limit)])
                     emit(.autoPaused, session: id)
                     stop(session: id)
                     return
@@ -302,8 +308,34 @@ public actor LiveMonitor {
         } catch is CancellationError {
             return
         } catch {
+            // The message can carry a path, so it is not logged.
+            HeatLensLog.error(.live, "session failed")
             emit(.failed("\(error)"), session: id)
             stop(session: id)
+        }
+    }
+
+    private static func isAdaptive(_ mode: SamplingPolicy.Mode) -> Bool {
+        if case .adaptive = mode { true } else { false }
+    }
+
+    /// One line per alert: the rule and how long it had to hold (`sustain`, as set), plus a
+    /// watch's project name as a private name.
+    private static func log(_ alert: Alert, configuration: AlertConfiguration) {
+        let sustain = configuration.rules.first { $0.kind == alert.rule }?.sustain ?? 0
+        let rule: StaticString
+        switch alert.rule {
+        case .sustainedCPU: rule = "sustainedCPU"
+        case .memory: rule = "memory"
+        case .swap: rule = "swap"
+        case .thermal: rule = "thermal"
+        case .containers: rule = "containers"
+        case nil: rule = "watch"
+        }
+        if let watch = alert.watch {
+            HeatLensLog.notice(.alerts, "alert fired", ["rule": .word(rule), "held": .seconds(sustain), "project": .name(watch.projectName)])
+        } else {
+            HeatLensLog.notice(.alerts, "alert fired", ["rule": .word(rule), "held": .seconds(sustain)])
         }
     }
 

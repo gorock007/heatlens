@@ -133,6 +133,7 @@ final class ActionLog {
 
     private func added(_ record: ActionRecord, save: Bool) {
         revision += 1
+        Self.log(record)
         // Checked again here, so a record made just as Keep history was turned off isn't saved.
         guard save, let settings, settings.keepHistory else { return }
         guard let store = history.store(retentionDays: settings.historyRetentionDays) else {
@@ -147,5 +148,35 @@ final class ActionLog {
                 saveError = "Action not saved to history: \(error)"
             }
         }
+    }
+
+    /// The action and outcome as words; the target is a private name. Never the detail text.
+    private static func log(_ record: ActionRecord) {
+        let action: StaticString
+        switch record.action {
+        case .stopRequested: action = "stopRequested"
+        case .forceQuit: action = "forceQuit"
+        case .containerStop: action = "containerStop"
+        case .ignored: action = "ignored"
+        case .cancelled: action = "cancelled"
+        }
+        let outcome: StaticString
+        switch record.outcome {
+        case "stopped": outcome = "stopped"
+        case "stillRunning": outcome = "stillRunning"
+        case "stillStopping": outcome = "stillStopping"
+        case "alreadyExited": outcome = "alreadyExited"
+        case "alreadyStopped": outcome = "alreadyStopped"
+        case "gone": outcome = "gone"
+        case "identityChanged": outcome = "identityChanged"
+        case "denied": outcome = "denied"
+        case "failed": outcome = "failed"
+        default: outcome = "other"
+        }
+        let name: String
+        switch record.target {
+        case .process(_, _, let n), .container(_, let n, _, _), .project(let n): name = n
+        }
+        HeatLensLog.notice(.actions, "action recorded", ["action": .word(action), "outcome": .word(outcome), "target": .name(name)])
     }
 }

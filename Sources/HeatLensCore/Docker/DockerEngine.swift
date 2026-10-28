@@ -56,6 +56,41 @@ public struct DockerEngineSampler: DockerSampling {
     }
 
     public func reading() -> DockerReading {
+        let reading = read()
+        availabilityLog.note(reading.availability)
+        return reading
+    }
+
+    private let availabilityLog = AvailabilityLog()
+
+    /// Logs Docker's availability when it changes, not every reading.
+    private final class AvailabilityLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var last: DockerAvailability?
+
+        func note(_ availability: DockerAvailability) {
+            let changed = lock.withLock {
+                // Compared by case: an error message or version doesn't count as a change.
+                defer { last = availability }
+                return last.map { "\(Self.word($0))" != "\(Self.word(availability))" } ?? true
+            }
+            if changed { HeatLensLog.notice(.docker, "docker availability changed", ["state": .word(Self.word(availability))]) }
+        }
+
+        static func word(_ availability: DockerAvailability) -> StaticString {
+            switch availability {
+            case .available: "available"
+            case .disabled: "disabled"
+            case .socketNotFound: "socketNotFound"
+            case .permissionDenied: "permissionDenied"
+            case .daemonNotResponding: "daemonNotResponding"
+            case .unsupportedAPI: "unsupportedAPI"
+            case .error: "error"
+            }
+        }
+    }
+
+    private func read() -> DockerReading {
         guard let transport else { return .unavailable(locatorFailure ?? .socketNotFound) }
         let version: DockerVersionResponse
         do {

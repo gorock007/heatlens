@@ -141,7 +141,8 @@ struct IncidentExportSheet: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try data.write(to: url, options: .atomic)
-            // 4d: HeatLensLog.notice(.export, format, anonymized)
+            HeatLensLog.notice(.export, "incident report saved", ["format": .word(format == .markdown ? "markdown" : "json"),
+                                                                  "anonymized": .flag(anonymize)])
             dismiss()
         } catch {
             saveError = "Couldn't save the report: \(error.localizedDescription)"

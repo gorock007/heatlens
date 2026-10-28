@@ -102,6 +102,7 @@ public actor HistoryStore {
         } catch {
             sqlite3_close(handle)
             db = nil
+            HeatLensLog.error(.history, "history open failed")
             throw error
         }
         Self.restrictPermissions(url)
@@ -109,6 +110,19 @@ public actor HistoryStore {
 
     deinit {
         sqlite3_close(db)
+    }
+
+    /// True after a write failed, until one succeeds: a failing disk logs once, not every tick.
+    private var failing = false
+
+    private func noteFailure(_ event: StaticString) {
+        if !failing { HeatLensLog.error(.history, event) }
+        failing = true
+    }
+
+    private func noteSuccess() {
+        if failing { HeatLensLog.notice(.history, "history writes recovered") }
+        failing = false
     }
 
     /// Stores one tick. Rolls up and prunes at most once a minute.
@@ -135,8 +149,10 @@ public actor HistoryStore {
             try Self.exec(db, "COMMIT")
         } catch {
             try? Self.exec(db, "ROLLBACK")
+            noteFailure("history write failed")
             throw error
         }
+        noteSuccess()
         let date = now()
         if lastMaintenance.map({ date.timeIntervalSince($0) >= Self.maintenanceInterval }) ?? true {
             try maintain()
@@ -162,8 +178,10 @@ public actor HistoryStore {
             try Self.exec(db, "COMMIT")
         } catch {
             try? Self.exec(db, "ROLLBACK")
+            noteFailure("history write failed")
             throw error
         }
+        noteSuccess()
         let date = now()
         if lastMaintenance.map({ date.timeIntervalSince($0) >= Self.maintenanceInterval }) ?? true {
             try maintain()
@@ -233,6 +251,7 @@ public actor HistoryStore {
             try Self.exec(db, "COMMIT")
         } catch {
             try? Self.exec(db, "ROLLBACK")
+            noteFailure("history maintenance failed")
             throw error
         }
         // SQLite checkpoints the WAL itself every 1,000 pages; once an hour also give space back.
@@ -291,9 +310,11 @@ public actor HistoryStore {
         for suffix in ["", "-wal", "-shm", "-journal"] {
             let path = url.path + suffix
             if unlink(path) != 0, errno != ENOENT {
+                HeatLensLog.error(.history, "history delete failed")
                 throw Failure.sql("couldn't delete \((path as NSString).lastPathComponent): \(String(cString: strerror(errno)))")
             }
         }
+        HeatLensLog.notice(.history, "history deleted")
     }
 
     /// Bytes on disk for the database and its WAL.

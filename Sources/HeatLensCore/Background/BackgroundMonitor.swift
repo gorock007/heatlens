@@ -108,6 +108,7 @@ public actor BackgroundMonitor {
     private var subscribers: [Int: (kind: Subscription, continuation: AsyncStream<BackgroundEvent>.Continuation)] = [:]
     private var nextSubscriber = 0
     private var latest: LiveTick?
+    private var lastIntervalNotice: Date?
     /// The current session's last decision, nil until its first tick.
     private var decision: SamplingPolicy.Decision?
     private var ring = RecentAlerts(limit: BackgroundMonitor.recentAlertLimit)
@@ -330,8 +331,65 @@ public actor BackgroundMonitor {
         }
         if !Self.sameKind(next.mode, status.mode) { next.since = now() }
         guard next != status else { return }
+        logChange(from: status, to: next)
         status = next
         emit(.status(next))
+    }
+
+    /// Mode changes are notices. A new interval or reason within a mode is a notice at most once
+    /// per 10 minutes, and debug otherwise, so a steady session persists next to nothing.
+    private func logChange(from old: BackgroundStatus, to new: BackgroundStatus) {
+        if !Self.sameKind(old.mode, new.mode) {
+            let reason: StaticString
+            switch new.mode {
+            case .foreground: reason = "viewer attached"
+            case .background:
+                if case .foreground = old.mode { reason = "viewer left" } else { reason = "keep watching" }
+            case .paused(let why):
+                switch why {
+                case .notConfigured: reason = "notConfigured"
+                case .notWatching: reason = "notWatching"
+                case .user: reason = "user"
+                case .autoPaused: reason = "autoPaused"
+                case .failed: reason = "failed"
+                }
+            }
+            HeatLensLog.notice(.background, "mode changed", ["to": .word(Self.word(new.mode)), "why": .word(reason),
+                                                            "interval": .seconds(new.interval ?? 0)])
+        } else if old.interval != new.interval || old.reason != new.reason {
+            let date = now()
+            let quiet = lastIntervalNotice.map { date.timeIntervalSince($0) < Self.intervalNoticeGap } ?? false
+            guard new.interval != nil else { return }
+            let values: KeyValuePairs<StaticString, HeatLensLog.Value> = ["interval": .seconds(new.interval ?? 0), "why": .word(Self.word(new.reason))]
+            if quiet {
+                HeatLensLog.debug(.background, "interval changed", values)
+            } else {
+                lastIntervalNotice = date
+                HeatLensLog.notice(.background, "interval changed", values)
+            }
+        }
+    }
+
+    private static let intervalNoticeGap: TimeInterval = 10 * 60
+
+    private static func word(_ mode: BackgroundStatus.Mode) -> StaticString {
+        switch mode {
+        case .paused: "paused"
+        case .foreground: "foreground"
+        case .background: "background"
+        }
+    }
+
+    private static func word(_ reason: SamplingPolicy.Reason?) -> StaticString {
+        switch reason {
+        case .viewer: "viewer"
+        case .idle: "idle"
+        case .incident: "incident"
+        case .battery: "battery"
+        case .lowPowerMode: "lowPowerMode"
+        case .fixed: "fixed"
+        case nil: "none"
+        }
     }
 
     /// What the policy waits now. A viewer always wins. A tick decided before the viewer left
