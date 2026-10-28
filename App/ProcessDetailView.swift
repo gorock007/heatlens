@@ -7,14 +7,26 @@ struct ProcessDetailView: View {
     let stopService: any ProcessStopping
     let onBack: () -> Void
     let onRequestStop: (StopTarget) -> Void
+    /// Scan results pass it for "Ignore this process/project"; Live passes none and stays read-only.
+    var settings: SettingsModel? = nil
 
     @State private var copiedPID = false
     @State private var copiedCommand = false
+    @State private var ignoredProcess = false
+    @State private var ignoredProject = false
 
     private var process: ProcessSample? { context.processes[identity] }
     private var project: ProjectAttribution? { context.project(for: identity) }
     private var findings: [DiagnosticFinding] { context.findings(for: identity) }
     private var offeredStop: Bool { context.offersStop(for: identity) }
+    /// The project as the Projects card shows it: the repository root when there is one, else the
+    /// attributed directory. Ignoring it excludes this directory and everything under it.
+    private var ignorableProject: (directory: String, name: String)? {
+        if let repository = context.report.projects.usage(containing: identity)?.project {
+            return (repository.root, repository.name)
+        }
+        return project.map { ($0.directory, ($0.directory as NSString).lastPathComponent) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -89,6 +101,19 @@ struct ProcessDetailView: View {
                 Text("From \(project.basis) · \(Format.confidence(project.confidence))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let settings, let ignorable = ignorableProject {
+                    if ignoredProject {
+                        ignoredNote
+                    } else if !settings.isProjectExcluded(ignorable.directory) {
+                        Button("Ignore this project") {
+                            ActionRecording.ignoreProject(directory: ignorable.directory, name: ignorable.name,
+                                                          origin: .processDetail, settings: settings)
+                            ignoredProject = true
+                        }
+                        .controlSize(.small)
+                        .help("Add \(ProjectFormat.path(ignorable.directory)) to the excluded projects in Settings")
+                    }
+                }
             } else {
                 Text("Unknown project")
                     .font(.caption)
@@ -150,6 +175,15 @@ struct ProcessDetailView: View {
                         .disabled(!projectExists(project.directory))
                 }
                 Button("Activity Monitor", action: openActivityMonitor)
+                if let settings, let process, !ignoredProcess, !settings.isProcessExcluded(process.name) {
+                    Button("Ignore this process") {
+                        ActionRecording.ignoreProcess(identity, name: process.name,
+                                                      projectName: project.map { ($0.directory as NSString).lastPathComponent },
+                                                      origin: .processDetail, settings: settings)
+                        ignoredProcess = true
+                    }
+                    .help("Add \(process.name) to the excluded processes in Settings")
+                }
                 if offeredStop, context.isExcluded(identity) {
                     Text("Excluded in Settings")
                         .font(.caption)
@@ -167,6 +201,10 @@ struct ProcessDetailView: View {
             }
             .controlSize(.small)
 
+            if ignoredProcess {
+                ignoredNote
+            }
+
             if offeredStop, !context.isExcluded(identity), let process, case .denied(let reason) = stopService.eligibility(of: process) {
                 Text("Stop unavailable: \(reason)")
                     .font(.caption)
@@ -174,6 +212,13 @@ struct ProcessDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private var ignoredNote: some View {
+        Text(ActionRecording.ignoredNote)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var sourceSuffix: String { process?.measurementSource == .ps ? " (via ps)" : "" }

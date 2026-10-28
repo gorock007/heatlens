@@ -89,6 +89,17 @@ struct BatchStopFlowView: View {
         .padding(18)
         .frame(width: 380)
         .interactiveDismissDisabled(run.isRunning)
+        // Cancel, Escape or the sheet closing before anything was sent: one record per selected row.
+        .onDisappear {
+            guard sent.isEmpty else { return }
+            for candidate in chosen {
+                ActionRecording.cancelled(.stopRequested,
+                                          target: .process(pid: candidate.identity.pid,
+                                                           startTimeMicros: candidate.identity.startTimeMicros,
+                                                           name: candidate.process.name),
+                                          projectName: leftovers.projectName, origin: .batchStop)
+            }
+        }
         .task(id: run.isFinished) {
             guard run.isFinished else { return }
             for (index, candidate) in sent.enumerated() where index < run.statuses.count

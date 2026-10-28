@@ -10,6 +10,8 @@ struct ProjectsCard: View {
     var limit = 5
     /// When set, container rows open the container's detail (scan results only; Live passes none).
     var onInspectContainer: ((ContainerSample) -> Void)? = nil
+    /// When set, project rows offer "Ignore this project" (scan results only; Live passes none).
+    var settings: SettingsModel? = nil
     @State private var showAll = false
 
     var body: some View {
@@ -26,7 +28,7 @@ struct ProjectsCard: View {
             }
             ForEach(showAll ? projects : Array(projects.prefix(limit))) { usage in
                 ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions,
-                           onInspectContainer: onInspectContainer)
+                           onInspectContainer: onInspectContainer, settings: settings)
             }
             if projects.count > limit {
                 Button(showAll ? "Show fewer" : "Show all \(projects.count) projects") { showAll.toggle() }
@@ -35,7 +37,7 @@ struct ProjectsCard: View {
             }
             ForEach(others) { usage in
                 ProjectRow(usage: usage, groups: groups, attributions: breakdown.containerAttributions,
-                           onInspectContainer: onInspectContainer)
+                           onInspectContainer: onInspectContainer, settings: settings)
             }
             ForEach(breakdown.notices, id: \.self) { notice in
                 Label(notice, systemImage: "info.circle")
@@ -52,6 +54,9 @@ private struct ProjectRow: View {
     let groups: [ProcessGroup]
     let attributions: [String: ContainerAttribution]
     let onInspectContainer: ((ContainerSample) -> Void)?
+    let settings: SettingsModel?
+
+    @State private var ignored = false
 
     var body: some View {
         DisclosureGroup {
@@ -95,6 +100,24 @@ private struct ProjectRow: View {
                         .help("Inspect container")
                     } else {
                         containerLine(container)
+                    }
+                }
+                // Projects only: not the Docker VM row, not Unattributed.
+                if let settings, let project = usage.project {
+                    if ignored {
+                        Text(ActionRecording.ignoredNote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if !settings.isProjectExcluded(project.root) {
+                        Button("Ignore this project") {
+                            ActionRecording.ignoreProject(directory: project.root, name: project.name,
+                                                          origin: .projectRow, settings: settings)
+                            ignored = true
+                        }
+                        .controlSize(.small)
+                        .help("Add \(ProjectFormat.path(project.root)) to the excluded projects in Settings")
+                        .padding(.top, 2)
                     }
                 }
             }

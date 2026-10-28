@@ -9,6 +9,8 @@ struct FindingCard: View {
     let stopService: any ProcessStopping
     let onInspect: (ProcessIdentity) -> Void
     let onRequestStop: (StopTarget) -> Void
+    /// "Ignore this process", with the process and its name; nil hides the button.
+    var onIgnoreProcess: ((ProcessIdentity, String) -> Void)? = nil
 
     @State private var showEvidence = false
     @State private var copiedCommand = false
@@ -56,6 +58,10 @@ struct FindingCard: View {
                 ForEach(Array(visibleActions.enumerated()), id: \.offset) { _, action in
                     actionButton(action)
                 }
+                if let onIgnoreProcess, let named = namedProcess {
+                    Button("Ignore this process") { onIgnoreProcess(named.identity, named.name) }
+                        .help("Add \(named.name) to the excluded processes in Settings")
+                }
             }
             .controlSize(.small)
         }
@@ -71,6 +77,15 @@ struct FindingCard: View {
         case .review: .yellow
         case .info: .secondary
         }
+    }
+
+    /// The process this finding names, when every process it names has the same name: one
+    /// excluded name then hides the whole card. A visible card's name is never excluded already.
+    private var namedProcess: (identity: ProcessIdentity, name: String)? {
+        let named = finding.affectedProcesses.compactMap { identity in context.processes[identity].map { (identity, $0.name) } }
+        guard let first = named.first, named.count == finding.affectedProcesses.count,
+              named.allSatisfy({ $0.1.caseInsensitiveCompare(first.1) == .orderedSame }) else { return nil }
+        return first
     }
 
     private var visibleActions: [SuggestedAction] {

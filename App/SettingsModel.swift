@@ -176,6 +176,34 @@ final class SettingsModel {
         ExclusionFilter(processNames: excludedProcessNames, projectPrefixes: excludedProjectPrefixes)
     }
 
+    func isProcessExcluded(_ name: String) -> Bool {
+        exclusions.excludes(processName: name, projectDirectory: nil)
+    }
+
+    /// True for the directory itself and for anything under an excluded prefix.
+    func isProjectExcluded(_ directory: String) -> Bool {
+        exclusions.excludes(processName: nil, projectDirectory: directory)
+    }
+
+    /// "Ignore this process": adds the name to the excluded processes unless it already matches
+    /// one (case-insensitively, as the filter compares). Returns whether a line was added.
+    @discardableResult
+    func ignoreProcess(_ name: String) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !isProcessExcluded(name) else { return false }
+        excludedProcesses = appending(name, to: excludedProcesses)
+        return true
+    }
+
+    /// "Ignore this project": adds the directory, with `~` for the home directory, unless it or a
+    /// prefix of it is already excluded. Returns whether a line was added.
+    @discardableResult
+    func ignoreProject(_ directory: String) -> Bool {
+        guard !directory.isEmpty, !isProjectExcluded(directory) else { return false }
+        excludedProjects = appending(ProjectFormat.path(directory), to: excludedProjects)
+        return true
+    }
+
     /// What Live checks, from the switches and thresholds above.
     var alertConfiguration: AlertConfiguration {
         AlertConfiguration(isEnabled: liveAlertsEnabled, rules: AlertRule.Kind.allCases.map { kind in
@@ -240,6 +268,10 @@ final class SettingsModel {
             launchAtLoginError = error.localizedDescription
         }
         refreshLaunchAtLoginStatus()
+    }
+
+    private func appending(_ line: String, to text: String) -> String {
+        text.isEmpty || text.hasSuffix("\n") ? text + line : text + "\n" + line
     }
 
     private func lines(in text: String) -> [String] {

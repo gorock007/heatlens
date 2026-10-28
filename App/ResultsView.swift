@@ -80,6 +80,53 @@ struct ReportContext {
     }
 }
 
+/// The action-log records the app writes itself (brief 3e-2): an ignore, and a confirmation the
+/// user backed out of. Stops, force quits and container stops are recorded by the engine.
+@MainActor
+enum ActionRecording {
+    /// Shown where the user pressed an ignore button; there is no confirmation, since it's reversible.
+    static let ignoredNote = "Ignored. Remove it in Settings → Exclusions to undo."
+
+    /// "Ignore this process": the name goes into Settings' excluded processes, once.
+    static func ignoreProcess(_ identity: ProcessIdentity, name: String, projectName: String?,
+                              origin: ActionRecord.Origin, settings: SettingsModel) {
+        let clickedAt = Date()
+        settings.ignoreProcess(name)
+        record(.ignored, target: .process(pid: identity.pid, startTimeMicros: identity.startTimeMicros, name: name),
+               projectName: projectName, origin: origin, at: clickedAt, confirmedAt: clickedAt, outcome: "ignored")
+    }
+
+    /// "Ignore this project": the directory goes into Settings' excluded projects; the log gets
+    /// the project's name only, never the directory.
+    static func ignoreProject(directory: String, name: String, origin: ActionRecord.Origin, settings: SettingsModel) {
+        let clickedAt = Date()
+        settings.ignoreProject(directory)
+        record(.ignored, target: .project(name: name), projectName: nil, origin: origin, at: clickedAt,
+               confirmedAt: clickedAt, outcome: "ignored")
+    }
+
+    /// A stop, force quit or container stop whose confirmation was cancelled; nothing was sent.
+    static func cancelled(_ offered: ActionRecord.Action, target: ActionRecord.Target, projectName: String?,
+                          origin: ActionRecord.Origin) {
+        record(.cancelled, target: target, projectName: projectName, origin: origin, at: Date(), confirmedAt: nil,
+               outcome: "cancelled", offered: offered)
+    }
+
+    static func processTarget(_ target: StopTarget) -> ActionRecord.Target {
+        .process(pid: target.identity.pid, startTimeMicros: target.identity.startTimeMicros, name: target.process.name)
+    }
+
+    private static func record(_ action: ActionRecord.Action, target: ActionRecord.Target, projectName: String?,
+                               origin: ActionRecord.Origin, at: Date, confirmedAt: Date?, outcome: String,
+                               offered: ActionRecord.Action? = nil) {
+        let record = ActionRecord(at: at, action: action, target: target, projectName: projectName, origin: origin,
+                                  confirmedAt: confirmedAt, signalSentAt: nil, outcome: outcome, detail: nil,
+                                  offered: offered)
+        let ledger = ActionLog.shared.ledger
+        Task { await ledger.record(record) }
+    }
+}
+
 struct ResultsView: View {
     let report: ScanReport
     let settings: SettingsModel
@@ -98,6 +145,8 @@ struct ResultsView: View {
     @State private var batchTarget: ProjectLeftovers?
     @State private var selectedContainer: ContainerSelection?
     @State private var containerStopTarget: ContainerSelection?
+    /// Set after "Ignore this process" on a finding card, whose card the exclusion then hides.
+    @State private var showIgnoredNote = false
 
     private var context: ReportContext {
         let visible = Set(visibleFindings.map(\.id))
@@ -114,7 +163,8 @@ struct ResultsView: View {
         Group {
             if let selectedProcess {
                 ProcessDetailView(identity: selectedProcess, context: context, stopService: stopService,
-                                  onBack: { self.selectedProcess = nil }, onRequestStop: { stopTarget = $0 })
+                                  onBack: { self.selectedProcess = nil }, onRequestStop: { stopTarget = $0 },
+                                  settings: settings)
             } else if let selectedContainer {
                 ContainerDetailView(selection: selectedContainer, settings: settings,
                                     onBack: { self.selectedContainer = nil }, onRequestStop: { containerStopTarget = $0 })
@@ -165,6 +215,12 @@ struct ResultsView: View {
                     DockerCard(snapshot: docker, onInspect: inspectContainer, canStop: settings.canStopContainers)
                 }
 
+                if showIgnoredNote {
+                    Label(ActionRecording.ignoredNote, systemImage: "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if hiddenCount > 0 {
                     Label("\(hiddenCount) finding\(hiddenCount == 1 ? "" : "s") hidden by your exclusions",
                           systemImage: "eye.slash")
@@ -176,12 +232,14 @@ struct ResultsView: View {
                     if findings.isEmpty { EmptyNote("No findings in this sample.") }
                     ForEach(findings) {
                         FindingCard(finding: $0, context: context, stopService: stopService,
-                                    onInspect: { selectedProcess = $0 }, onRequestStop: requestStopFromCard)
+                                    onInspect: { selectedProcess = $0 }, onRequestStop: requestStopFromCard,
+                                    onIgnoreProcess: ignoreProcessFromCard)
                     }
                 }
 
                 if !report.projects.usages.isEmpty {
-                    ProjectsCard(breakdown: report.projects, groups: report.groups, onInspectContainer: inspectContainer)
+                    ProjectsCard(breakdown: report.projects, groups: report.groups, onInspectContainer: inspectContainer,
+                                 settings: settings)
                 }
 
                 ResultSection(title: "Potential leftovers") {
@@ -191,7 +249,8 @@ struct ResultsView: View {
                             BatchStopRow(leftovers: batch) { batchTarget = batch }
                         }
                         FindingCard(finding: finding, context: context, stopService: stopService,
-                                    onInspect: { selectedProcess = $0 }, onRequestStop: requestStopFromCard)
+                                    onInspect: { selectedProcess = $0 }, onRequestStop: requestStopFromCard,
+                                    onIgnoreProcess: ignoreProcessFromCard)
                     }
                 }
 
@@ -246,6 +305,15 @@ struct ResultsView: View {
         stopTarget = target
     }
 
+    /// "Ignore this process" on a finding card. The card goes away with the exclusion, so the note
+    /// shows above the findings instead.
+    private func ignoreProcessFromCard(_ identity: ProcessIdentity, name: String) {
+        let projectName = context.project(for: identity).map { ($0.directory as NSString).lastPathComponent }
+        ActionRecording.ignoreProcess(identity, name: name, projectName: projectName, origin: .findingCard,
+                                      settings: settings)
+        showIgnoredNote = true
+    }
+
     /// Projects with 2 or more stoppable leftovers, keyed by the first of their findings, so the
     /// batch button shows once per project, above that project's first leftover card.
     private func batchesByFirstFinding(context: ReportContext) -> [UUID: ProjectLeftovers] {
@@ -285,17 +353,25 @@ struct StopFlowView: View {
     }
 
     var body: some View {
-        if case .forceQuit(let stopRequestedAt) = phase {
-            ForceQuitFlowView(
-                target: target, stopRequestedAt: stopRequestedAt, stopService: stopService,
-                onCancel: { phase = .outcome(.stillRunning, stopRequestedAt: stopRequestedAt) },
-                onFinished: { if $0 == .stopped { onStopped() } },
-                onScanAgain: onScanAgain)
-        } else {
-            stopSteps
-                .padding(18)
-                .frame(width: 330)
-                .interactiveDismissDisabled(isStopping)
+        Group {
+            if case .forceQuit(let stopRequestedAt) = phase {
+                ForceQuitFlowView(
+                    target: target, stopRequestedAt: stopRequestedAt, stopService: stopService,
+                    onCancel: { phase = .outcome(.stillRunning, stopRequestedAt: stopRequestedAt) },
+                    onFinished: { if $0 == .stopped { onStopped() } },
+                    onScanAgain: onScanAgain)
+            } else {
+                stopSteps
+                    .padding(18)
+                    .frame(width: 330)
+                    .interactiveDismissDisabled(isStopping)
+            }
+        }
+        // Cancel, Escape or the sheet closing while the SIGTERM is still only offered.
+        .onDisappear {
+            guard case .confirmation = phase else { return }
+            ActionRecording.cancelled(.stopRequested, target: ActionRecording.processTarget(target),
+                                      projectName: target.context().projectName, origin: target.origin)
         }
     }
 
@@ -463,6 +539,13 @@ struct ForceQuitFlowView: View {
         .padding(18)
         .frame(width: 330)
         .interactiveDismissDisabled(isForceQuitting)
+        // Cancel (the presenter then swaps this view out), Escape or the sheet closing while
+        // SIGKILL is still only offered.
+        .onDisappear {
+            guard case .forceQuitConfirmation = phase else { return }
+            ActionRecording.cancelled(.forceQuit, target: ActionRecording.processTarget(target),
+                                      projectName: target.context().projectName, origin: target.origin)
+        }
     }
 
     @ViewBuilder

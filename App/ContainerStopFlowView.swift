@@ -81,6 +81,19 @@ struct ContainerStopFlowView: View {
         .frame(width: 330)
         .interactiveDismissDisabled(isStopping)
         .task { await checkFirst() }
+        // Cancel, Escape or the sheet closing before Stop container was pressed.
+        .onDisappear {
+            switch phase {
+            case .checking, .confirmation:
+                ActionRecording.cancelled(.containerStop,
+                                          target: .container(shortID: container.shortID, name: container.name,
+                                                             image: container.image,
+                                                             composeProject: container.composeProject),
+                                          projectName: selection.project?.name, origin: .containerDetail)
+            case .stopping, .outcome:
+                break
+            }
+        }
     }
 
     private var details: some View {
