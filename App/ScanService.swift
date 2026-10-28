@@ -34,10 +34,12 @@ struct ScanReport: Sendable {
     /// Builds both redacted exports with `Redactor`, the same text `heatlens-probe --report` prints.
     /// Hardware and Docker stay out of the exports in Phase 1 (docs/v2/ADR-0002).
     init(_ result: ScanResult, hardware: HardwareSample? = nil, docker: DockerSnapshot? = nil, projects: ProjectBreakdown = .empty) {
-        let json = (try? Redactor.jsonReport(result.snapshot, groups: result.groups, findings: result.findings))
+        let json = (try? Redactor.jsonReport(result.snapshot, groups: result.groups, findings: result.findings,
+                                         projects: projects))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         self.init(snapshot: result.snapshot, groups: result.groups, findings: result.findings,
-                  reportText: Redactor.textReport(result.snapshot, groups: result.groups, findings: result.findings),
+                  reportText: Redactor.textReport(result.snapshot, groups: result.groups, findings: result.findings,
+                                                  projects: projects),
                   reportJSON: json, hardware: hardware, docker: docker, projects: projects)
     }
 }

@@ -9,7 +9,9 @@ public struct MCPServer: Sendable {
     public static let scanToolDescription = """
         Run one HeatLens scan of this Mac for `seconds` (1–15, default 5) and return what is using \
         CPU, memory and heat: system load, memory pressure and thermal state, the busiest processes \
-        grouped by the app or project that started them, and ranked findings with their evidence. \
+        grouped by the app or project that started them, CPU and memory per project (by name), and \
+        ranked findings with their evidence. Projects come from Git roots and project files; Docker \
+        containers and custom project folders are only in the HeatLens app. \
         Read-only: it never stops or changes a process. Results are redacted (home paths shortened to ~, \
         tokens and most arguments removed, username hidden). Returns the concise text report. Set \
         `includeJSON` to true to also get the full JSON report (every process; compact, but often \

@@ -25,8 +25,19 @@ public enum LiveScan {
     /// One `ScanPipeline` scan, rendered by `Redactor`.
     public static func run(seconds: Int, progress: @escaping @Sendable (TimeInterval) -> Void = { _ in }) async throws -> ScanReports {
         let result = try await ScanPipeline().run(duration: TimeInterval(seconds), progress: progress)
-        let text = Redactor.textReport(result.snapshot, groups: result.groups, findings: result.findings)
-        let data = try Redactor.jsonReport(result.snapshot, groups: result.groups, findings: result.findings)
+        return try reports(result)
+    }
+
+    /// Both reports for one scan, with its projects. The CLI reads neither Docker nor the app's
+    /// "Project folders" mappings, so projects come from Git roots and project files only.
+    static func reports(_ result: ScanResult, locator: ProjectRootLocator = ProjectRootLocator(),
+                        homeDirectory: String = NSHomeDirectory()) throws -> ScanReports {
+        let projects = ProjectAttributor.breakdown(snapshot: result.snapshot, groups: result.groups, docker: nil,
+                                                   mappings: [], locator: locator, home: homeDirectory)
+        let text = Redactor.textReport(result.snapshot, groups: result.groups, findings: result.findings,
+                                       projects: projects, homeDirectory: homeDirectory)
+        let data = try Redactor.jsonReport(result.snapshot, groups: result.groups, findings: result.findings,
+                                           projects: projects, homeDirectory: homeDirectory)
         return ScanReports(text: text, json: String(decoding: data, as: UTF8.self))
     }
 

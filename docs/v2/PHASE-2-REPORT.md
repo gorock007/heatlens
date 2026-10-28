@@ -72,14 +72,18 @@ repository to its process groups and containers, and process detail names the re
   1, 2, 4, 5, 6 and 8 passed (launch/defaults, Projects, Timeline/inference, Docker attribution,
   history growth/deletion and cleanup). Step 3 failed because Live process rows did not open
   detail; step 7 found the unchanged “keeps no scan history” wording while Live history was on.
-- Projects aren't in the copied reports or the CLI/MCP output yet.
+- Done (2026-10-28): projects are in the copied text and JSON reports, `heatlens scan` and the MCP
+  `scan` tool, by name only (never a path). The CLI and MCP find projects from Git roots and project
+  files; Docker containers and custom project folders are only in the app.
 - The timeline looks back further than the session only while "Keep history" is on, and only over
   periods when Live was running (Live pauses after 15 minutes; background sampling is Phase 4).
 
 ## Open decisions for the owner
 
 1. Should "Keep history" stay off by default? It writes to disk, which v1 promised not to do.
+   **Answer (user, 2026-10-28):** yes, it stays off by default; revisit in Phase 4 with background sampling.
 2. Should projects (names, not paths) go into the copied report and the MCP output for Jarvis?
+   **Answer (user, 2026-10-28):** yes, project names (not paths) go into the copied report and the MCP output. Done in the projects-in-reports phase.
 
 ## Next: Phase 3 brief
 

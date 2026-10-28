@@ -263,3 +263,112 @@ struct RedactorTests {
         #expect(elapsed < .seconds(1), "took \(elapsed)")
     }
 }
+
+@Suite("Redacted export: projects")
+struct RedactorProjectTests {
+    static let home = SyntheticSnapshots.home
+
+    static func identities(_ count: Int, from pid: Int32) -> [ProcessIdentity] {
+        (0..<count).map { ProcessIdentity(pid: pid + Int32($0), startTimeMicros: 1) }
+    }
+
+    static func container(_ id: String) -> ContainerSample {
+        ContainerSample(containerID: id, name: "db-" + id, image: "postgres", state: "running", status: "Up", createdAt: .distantPast,
+                        labels: [:], cpuPercentOfOneCore: 15, memoryBytes: 200 << 20, vmCPUCount: 6)
+    }
+
+    static func project(_ name: String, root: String, basis: String = "git repository", cpu: Double?, memory: UInt64,
+                        processes: Int, from pid: Int32, containers: [ContainerSample] = []) -> ProjectUsage {
+        ProjectUsage(bucket: .project(Project(name: name, root: root, confidence: .high, basis: basis)), groupRoots: [],
+                     processes: identities(processes, from: pid), containers: containers, hostCPUPercent: cpu,
+                     containerCPUPercent: containers.isEmpty ? nil : 30, memoryBytes: memory,
+                     containerMemoryBytes: containers.isEmpty ? nil : 400 << 20, cpuWatts: nil)
+    }
+
+    static func other(_ bucket: ProjectUsage.Bucket, cpu: Double, memory: UInt64, processes: Int, from pid: Int32) -> ProjectUsage {
+        ProjectUsage(bucket: bucket, groupRoots: [], processes: identities(processes, from: pid), containers: [],
+                     hostCPUPercent: cpu, containerCPUPercent: nil, memoryBytes: memory, containerMemoryBytes: nil, cpuWatts: nil)
+    }
+
+    static func bytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .memory)
+    }
+
+    /// The "Projects:" section's lines, up to the next section.
+    static func projectSection(_ text: String) -> [String] {
+        let lines = text.split(separator: "\n").map(String.init)
+        guard let start = lines.firstIndex(of: "Projects:") else { return [] }
+        let rest = lines[(start + 1)...]
+        return Array(rest.prefix { $0.hasPrefix("- ") || $0.hasPrefix("and ") })
+    }
+
+    static let breakdown = ProjectBreakdown(usages: [
+        project("my-app", root: home + "/Developer/my-app", cpu: 180, memory: 1_500 << 20, processes: 12, from: 100,
+                containers: [container("a"), container("b")]),
+        project("someone/api", root: home + "/Clients/someone-api", basis: "user mapping", cpu: 4, memory: 64 << 20,
+                processes: 1, from: 200),
+        other(.dockerVM, cpu: 50, memory: 2 << 30, processes: 1, from: 300),
+        other(.unattributed, cpu: 20, memory: 3 << 30, processes: 40, from: 400),
+    ], containerAttributions: [:], notices: [])
+
+    @Test("Two projects, the Docker VM and Unattributed render as lines and JSON fields, by name only")
+    func rendersRows() throws {
+        let snapshot = SyntheticSnapshots.snapshot([])
+        let text = Redactor.textReport(snapshot, groups: [], findings: [], projects: Self.breakdown, homeDirectory: Self.home)
+        let section = Self.projectSection(text)
+        #expect(section == [
+            "- my-app: 2.1 cores (19%), \(Self.bytes(1_500 << 20)) + \(Self.bytes(400 << 20)) in Docker, 12 processes, 2 containers",
+            "- <user>-api: 0.0 cores (0%), \(Self.bytes(64 << 20)), 1 process",
+            "- Docker VM: 0.5 cores (5%), \(Self.bytes(2 << 30)), 1 process",
+            "- Unattributed: 0.2 cores (2%), \(Self.bytes(3 << 30)), 40 processes",
+        ])
+        let lines = text.split(separator: "\n").map(String.init)
+        #expect(lines.firstIndex(of: "Projects:") == lines.firstIndex { $0.hasPrefix("System:") }.map { $0 + 1 })
+        for line in section { #expect(!line.contains("/"), "\(line)") }
+
+        let json = try Redactor.jsonReport(snapshot, groups: [], findings: [], projects: Self.breakdown, homeDirectory: Self.home)
+        let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        let rows = try #require(object["projects"] as? [[String: Any]])
+        #expect(rows.map { $0["name"] as? String } == ["my-app", "<user>-api", "Docker VM", "Unattributed"])
+        #expect(rows.map { $0["kind"] as? String } == ["project", "project", "dockerVM", "unattributed"])
+        #expect(rows[0]["cpuPercent"] as? Double == 210)
+        #expect(rows[0]["memoryBytes"] as? Int == 1_500 << 20)
+        #expect(rows[0]["containerMemoryBytes"] as? Int == 400 << 20)
+        #expect(rows[0]["processCount"] as? Int == 12)
+        #expect(rows[0]["containerCount"] as? Int == 2)
+        #expect(rows[0]["basis"] as? String == "git repository")
+        #expect(rows[1]["basis"] as? String == "user mapping")
+        #expect(rows[2]["basis"] == nil)
+        for row in rows {
+            #expect(row["directory"] == nil && row["root"] == nil)
+            for case let value as String in row.values { #expect(!value.contains("/"), "\(value)") }
+        }
+    }
+
+    @Test("More than 8 projects end in \"and N more\"; the Docker VM and Unattributed are still listed")
+    func capsProjects() {
+        let projects = (0..<11).map { index in
+            Self.project("p\(index)", root: Self.home + "/p\(index)", cpu: Double(100 - index), memory: 1 << 20, processes: 1,
+                         from: Int32(100 + index))
+        }
+        let breakdown = ProjectBreakdown(usages: projects + [Self.other(.unattributed, cpu: 1, memory: 1 << 20, processes: 1, from: 900)],
+                                         containerAttributions: [:], notices: [])
+        let text = Redactor.textReport(SyntheticSnapshots.snapshot([]), groups: [], findings: [], projects: breakdown,
+                                       homeDirectory: Self.home)
+        let section = Self.projectSection(text)
+        #expect(section.count == Redactor.textProjectLimit + 2)
+        #expect(section.prefix(Redactor.textProjectLimit).map { String($0.prefix(5)) } == (0..<8).map { "- p\($0):" })
+        #expect(section[Redactor.textProjectLimit] == "and 3 more projects; Copy JSON for the full list")
+        #expect(section.last?.hasPrefix("- Unattributed:") == true)
+    }
+
+    @Test("An empty breakdown leaves the section and the JSON rows out")
+    func emptyBreakdown() throws {
+        let snapshot = SyntheticSnapshots.snapshot([])
+        let text = Redactor.textReport(snapshot, groups: [], findings: [], homeDirectory: Self.home)
+        #expect(!text.contains("Projects:"))
+        let json = try Redactor.jsonReport(snapshot, groups: [], findings: [], homeDirectory: Self.home)
+        let object = try #require(try JSONSerialization.jsonObject(with: json) as? [String: Any])
+        #expect((object["projects"] as? [Any])?.isEmpty == true)
+    }
+}

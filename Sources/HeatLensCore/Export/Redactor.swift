@@ -10,15 +10,19 @@ public enum Redactor {
     public static let textArgvLimit = 300
     /// Power assertion names in both reports are cut to this many characters.
     public static let assertionNameLimit = 80
+    /// How many projects the text report lists before "and N more"; the Docker VM and
+    /// Unattributed rows are always listed. `jsonReport` carries every row.
+    public static let textProjectLimit = 8
 
     public static func textReport(
         _ snapshot: ScanSnapshot,
         groups: [ProcessGroup],
         findings: [DiagnosticFinding],
+        projects: ProjectBreakdown = .empty,
         homeDirectory: String = NSHomeDirectory(),
         processLimit: Int = Redactor.textProcessLimit
     ) -> String {
-        let report = makeReport(snapshot, groups: groups, findings: findings, homeDirectory: homeDirectory)
+        let report = makeReport(snapshot, groups: groups, findings: findings, projects: projects, homeDirectory: homeDirectory)
         // Top N by CPU (unmeasured last), plus the busiest few each finding names, highest CPU first.
         let byCPU = report.processes.sorted { ($0.cpuPercent ?? -1, $1.pid) > ($1.cpuPercent ?? -1, $0.pid) }
         let named = Set(report.findings.flatMap { finding in
@@ -34,6 +38,7 @@ public enum Redactor {
             "Started: \(ISO8601DateFormatter().string(from: report.startedAt)); interval: \(String(format: "%.1f", report.interval)) s",
             "System: \(String(format: "%.1f", report.hostBusyPercent))% busy, memory pressure \(report.memoryPressure), thermal \(report.thermalState)",
         ]
+        lines += projectLines(report.projects, coreCount: snapshot.system.coreCount)
         if !report.notices.isEmpty {
             lines.append("Notices: \(report.notices.joined(separator: "; "))")
         }
@@ -136,9 +141,10 @@ public enum Redactor {
         _ snapshot: ScanSnapshot,
         groups: [ProcessGroup],
         findings: [DiagnosticFinding],
+        projects: ProjectBreakdown = .empty,
         homeDirectory: String = NSHomeDirectory()
     ) throws -> Data {
-        try encoder.encode(makeReport(snapshot, groups: groups, findings: findings, homeDirectory: homeDirectory))
+        try encoder.encode(makeReport(snapshot, groups: groups, findings: findings, projects: projects, homeDirectory: homeDirectory))
     }
 
     private static var encoder: JSONEncoder {
@@ -146,6 +152,36 @@ public enum Redactor {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return encoder
+    }
+
+    /// The "Projects:" section, names only, e.g. `- my-app: 2.1 cores (35%), 1.4 GB, 12 processes, 2 containers`,
+    /// where the percentage is the share of all `coreCount` cores. Left out when there are no rows.
+    private static func projectLines(_ rows: [RedactedProjectUsage], coreCount: Int) -> [String] {
+        guard !rows.isEmpty else { return [] }
+        let projects = rows.filter { $0.kind == "project" }
+        let listed = projects.prefix(textProjectLimit) + rows.filter { $0.kind != "project" }
+        var lines = ["Projects:"]
+        for row in listed {
+            var parts: [String] = []
+            if let percent = row.cpuPercent {
+                let share = coreCount > 0 ? " (\(Int((percent / Double(coreCount)).rounded()))%)" : ""
+                parts.append(String(format: "%.1f cores", percent / 100) + share)
+            } else {
+                parts.append("CPU Unavailable")
+            }
+            var memory = ByteCountFormatter.string(fromByteCount: Int64(clamping: row.memoryBytes), countStyle: .memory)
+            if let inDocker = row.containerMemoryBytes {
+                memory += " + \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inDocker), countStyle: .memory)) in Docker"
+            }
+            parts.append(memory)
+            if row.processCount > 0 { parts.append("\(row.processCount) process\(row.processCount == 1 ? "" : "es")") }
+            if row.containerCount > 0 { parts.append("\(row.containerCount) container\(row.containerCount == 1 ? "" : "s")") }
+            lines.append("- \(row.name): \(parts.joined(separator: ", "))")
+        }
+        if projects.count > textProjectLimit {
+            lines.insert("and \(projects.count - textProjectLimit) more projects; Copy JSON for the full list", at: textProjectLimit + 1)
+        }
+        return lines
     }
 
     /// The "Listening ports:" section, shared by the scan and ports text reports.
@@ -204,6 +240,25 @@ private struct RedactedReport: Codable {
     let findings: [RedactedFinding]
     let listeningPorts: [RedactedPort]
     let powerAssertions: [RedactedPowerAssertion]
+    let projects: [RedactedProjectUsage]
+}
+
+/// One row of the project breakdown, by name only: never the project's directory.
+private struct RedactedProjectUsage: Codable {
+    let name: String
+    /// "project", "dockerVM" or "unattributed".
+    let kind: String
+    /// Host-process CPU plus container CPU moved here from the Docker VM; 100 = one core, like a
+    /// process's `cpuPercent`. Null when nothing in the row had a CPU figure.
+    let cpuPercent: Double?
+    let memoryBytes: UInt64
+    /// Memory inside the Docker VM, beside `memoryBytes` and not part of it.
+    let containerMemoryBytes: UInt64?
+    let processCount: Int
+    let containerCount: Int
+    /// How a project was found: "git repository", "package.json", "user mapping", "working directory".
+    let basis: String?
+    let confidence: String?
 }
 
 private struct RedactedAwakeReport: Codable {
@@ -310,6 +365,7 @@ private extension Redactor {
         _ snapshot: ScanSnapshot,
         groups: [ProcessGroup],
         findings: [DiagnosticFinding],
+        projects: ProjectBreakdown,
         homeDirectory: String
     ) -> RedactedReport {
         let sanitizer = Sanitizer(homeDirectory: homeDirectory, groups: groups)
@@ -368,7 +424,25 @@ private extension Redactor {
                 )
             },
             listeningPorts: portRows(snapshot, groups: groups, sanitizer: sanitizer),
-            powerAssertions: assertionRows(snapshot, groups: groups, sanitizer: sanitizer)
+            powerAssertions: assertionRows(snapshot, groups: groups, sanitizer: sanitizer),
+            projects: projects.usages.map { usage in
+                let kind = switch usage.bucket {
+                case .project: "project"
+                case .dockerVM: "dockerVM"
+                case .unattributed: "unattributed"
+                }
+                return RedactedProjectUsage(
+                    name: sanitizer.projectName(usage.name),
+                    kind: kind,
+                    cpuPercent: usage.hostCPUPercent == nil && usage.containerCPUPercent == nil ? nil : usage.totalCPUPercent,
+                    memoryBytes: usage.memoryBytes,
+                    containerMemoryBytes: usage.containerMemoryBytes,
+                    processCount: usage.processes.count,
+                    containerCount: usage.containers.count,
+                    basis: usage.project.map { sanitizer.text($0.basis) },
+                    confidence: usage.project?.confidence.rawValue
+                )
+            }
         )
     }
 
@@ -508,6 +582,13 @@ private struct Sanitizer {
             let text = component[range]
             return text.contains(where: \.isUppercase) && text.contains(where: \.isLowercase) && text.contains(where: \.isNumber)
         }
+    }
+
+    /// A project's name for a report: sanitized, never a path (a mapping's name may hold a `/`),
+    /// cut to 80 characters.
+    func projectName(_ raw: String) -> String {
+        let value = text(raw).replacingOccurrences(of: "/", with: "-")
+        return value.count > 80 ? String(value.prefix(79)) + "…" : value
     }
 
     func arguments(_ arguments: [String]?) -> [String]? {

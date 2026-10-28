@@ -21,8 +21,7 @@ struct FixtureScanService: ScanService {
         let projects = ProjectAttributor.breakdown(snapshot: report.snapshot, groups: report.groups, docker: docker,
                                                    mappings: options.projectMappings,
                                                    locator: ProjectRootLocator(exists: { _ in false }))
-        return ScanReport(snapshot: report.snapshot, groups: report.groups, findings: report.findings,
-                          reportText: report.reportText, reportJSON: report.reportJSON,
+        return ScanReport(ScanResult(snapshot: report.snapshot, groups: report.groups, findings: report.findings),
                           hardware: options.hardwareSensors ? Self.hardware(at: startedAt) : Self.hardwareOff(at: startedAt),
                           docker: docker, projects: projects)
     }

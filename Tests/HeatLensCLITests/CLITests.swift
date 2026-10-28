@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import HeatLensCLI
+import HeatLensCore
 
 @Suite("heatlens arguments")
 struct ArgumentTests {
@@ -256,5 +257,38 @@ struct MCPServerTests {
 
         // A response from the client needs no reply.
         #expect(await s.handle(line: #"{"jsonrpc":"2.0","id":11,"result":{}}"#) == nil)
+    }
+}
+
+@Suite("heatlens scan reports")
+struct ScanReportTests {
+    /// One synthetic process working in this checkout (a Git repository), so no real scan runs.
+    @Test("scan reports carry a Projects section, by name, for a process inside this checkout")
+    func projectsFromGitRoot() throws {
+        let checkout = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().standardizedFileURL.path
+        let process = ProcessSample(identity: ProcessIdentity(pid: 4_242, startTimeMicros: 1), parentPID: 1, owner: .currentUser,
+                                    name: "swift-build", executablePath: "/usr/bin/swift-build", arguments: ["swift-build"],
+                                    currentDirectory: checkout, cpu: CPUTime(userNanoseconds: 1, systemNanoseconds: 0),
+                                    cpuPercentOfOneCore: 150, residentBytes: 64 << 20, footprintBytes: 96 << 20, threadCount: 4,
+                                    detailAccess: .available)
+        let memory = MemorySnapshot(totalBytes: 18 << 30, freeBytes: 4 << 30, activeBytes: 5 << 30, inactiveBytes: 3 << 30,
+                                    wiredBytes: 3 << 30, compressedBytes: 2 << 30, swapUsedBytes: 0, swapTotalBytes: 0,
+                                    swapOutsDelta: 0, pressure: .normal, availablePercent: 40)
+        let system = SystemSample(coreCount: 10, hostBusyFraction: 0.2, perCoreBusyFraction: Array(repeating: 0.2, count: 10),
+                                  memory: memory, thermalState: .nominal, pmsetCPUSpeedLimit: nil, pmsetCPUSchedulerLimit: nil)
+        let snapshot = ScanSnapshot(startedAt: Date(), interval: 2, system: system, processes: [process], notices: [])
+        let groups = ProvenanceResolver.resolve(snapshot)
+        let reports = try LiveScan.reports(ScanResult(snapshot: snapshot, groups: groups, findings: []))
+
+        let name = (checkout as NSString).lastPathComponent
+        let lines = reports.text.split(separator: "\n").map(String.init)
+        let start = try #require(lines.firstIndex(of: "Projects:"))
+        #expect(lines[start + 1].hasPrefix("- \(name): 1.5 cores (15%), "))
+        #expect(!lines[start + 1].contains("/"))
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(reports.json.utf8)) as? [String: Any])
+        let rows = try #require(object["projects"] as? [[String: Any]])
+        #expect(rows.first?["name"] as? String == name)
+        #expect(rows.first?["basis"] as? String == "git repository")
     }
 }
