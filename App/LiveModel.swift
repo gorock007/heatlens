@@ -16,6 +16,12 @@ final class LiveModel {
 
     private(set) var state: State = .stopped(reason: nil)
     private(set) var latest: LiveTick?
+    /// The alerts of the most recent tick that had any, kept on screen for `alertBannerDuration`
+    /// after they fired (or until dismissed), across later ticks without alerts.
+    private(set) var recentAlerts: [HeatLensCore.Alert] = []
+
+    /// How long Live's alert banner stays up: one tick (5 s) was too short to notice.
+    static let alertBannerDuration: TimeInterval = 2 * 60
 
     let settings: SettingsModel
     @ObservationIgnored private let monitor: LiveMonitor
@@ -52,6 +58,8 @@ final class LiveModel {
                 switch event {
                 case .tick(let tick):
                     self.latest = tick
+                    if !tick.alerts.isEmpty { self.recentAlerts = tick.alerts }
+                    self.expireAlerts()
                     self.state = .running
                 case .autoPaused:
                     self.state = .stopped(reason: "Paused after 15 minutes")
@@ -72,6 +80,21 @@ final class LiveModel {
         consumer?.cancel()
         consumer = nil
         if case .stopped = state {} else { state = .stopped(reason: nil) }
+    }
+
+    /// When the banner's alerts are due to go; nil when there are none.
+    var recentAlertsExpireAt: Date? {
+        recentAlerts.map(\.firedAt).max()?.addingTimeInterval(Self.alertBannerDuration)
+    }
+
+    /// Clears the banner once `alertBannerDuration` has passed since its alerts fired.
+    func expireAlerts(now: Date = Date()) {
+        if let expiry = recentAlertsExpireAt, now >= expiry { recentAlerts = [] }
+    }
+
+    /// The banner's ×: the alerts stay in Timeline.
+    func dismissAlerts() {
+        recentAlerts = []
     }
 
     func refreshNow() {

@@ -120,6 +120,27 @@ struct ConcurrencyRulesTests {
         #expect(grown.containerIDs.count == 2)
     }
 
+    @Test("three trees, two of them claude: the title counts trees per agent name")
+    func treesPerAgent() throws {
+        var rules = ConcurrencyRules()
+        let claude2 = process(300, argv: ["claude"])
+        _ = rules.explanations(for: tick([claude, codex, claude2]))
+        let all = [claude, codex, claude2] + testRun(agent: 100, at: 6) + testRun(agent: 200, at: 7) + testRun(agent: 300, at: 8)
+        let explanation = try #require(rules.explanations(for: tick(all, seconds: 5)).first)
+        #expect(explanation.title == "3 test runs began within 10 s across 3 agent trees (claude ×2, codex) in FDA")
+    }
+
+    @Test("tree names: most trees first, then by name; no agent last")
+    func treeNames() {
+        let tree = { (name: String, pid: Int32) in Explanation.AgentTree(name: name, root: ProcessIdentity(pid: pid, startTimeMicros: 1)) }
+        #expect(ConcurrencyRules.treeNames([tree("codex", 1), tree("claude", 2)]) == "claude, codex")
+        #expect(ConcurrencyRules.treeNames([tree("codex", 1), tree("claude", 2), tree("claude", 3)]) == "claude ×2, codex")
+        #expect(ConcurrencyRules.treeNames([tree("claude", 1), tree("opencode", 2), tree("opencode", 3), tree("codex", 4)])
+            == "opencode ×2, claude, codex")
+        #expect(ConcurrencyRules.treeNames([.noAgent, tree("claude", 1)]) == "claude, no agent")
+        #expect(ConcurrencyRules.treeNames([.noAgent, .noAgent]) == "no agent ×2")
+    }
+
     @Test("a single agent running one test explains nothing")
     func singleAgent() {
         var rules = ConcurrencyRules()

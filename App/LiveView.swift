@@ -29,8 +29,14 @@ struct LiveView: View {
                         if !tick.explanations.isEmpty {
                             ExplanationsCard(explanations: tick.explanations)
                         }
-                        if !tick.alerts.isEmpty {
-                            AlertBanner(alerts: tick.alerts)
+                        if !model.recentAlerts.isEmpty {
+                            AlertBanner(alerts: model.recentAlerts, onDismiss: model.dismissAlerts)
+                                .task(id: model.recentAlertsExpireAt) {
+                                    // Ticks also expire it; this covers a paused session.
+                                    guard let expiry = model.recentAlertsExpireAt else { return }
+                                    try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow)))
+                                    if !Task.isCancelled { model.expireAlerts() }
+                                }
                         }
                         LiveOverview(tick: tick)
                         if !tick.projects.usages.isEmpty {
@@ -197,21 +203,33 @@ private struct LiveOverview: View {
     }
 }
 
-/// One line for the alerts that fired on this update; gone on the next update that has none.
+/// One line for the most recent alerts, up for 2 minutes after they fired or until ×.
 private struct AlertBanner: View {
     let alerts: [HeatLensCore.Alert]
+    let onDismiss: () -> Void
 
     var body: some View {
         let first = alerts[0]
         let more = alerts.count > 1 ? " · +\(alerts.count - 1) more" : ""
-        Label(first.title + more, systemImage: "bell.badge")
-            .font(.caption)
-            .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .help(alerts.map { $0.title + " — " + $0.suggestion }.joined(separator: "\n"))
+        HStack(spacing: 6) {
+            Label(first.title + more, systemImage: "bell.badge")
+                .font(.caption)
+                .lineLimit(1)
+                .help(alerts.map { $0.title + " — " + $0.suggestion }.joined(separator: "\n"))
+            Spacer(minLength: 0)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Dismiss. The alert stays in Timeline.")
+            .accessibilityLabel("Dismiss alert")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 

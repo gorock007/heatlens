@@ -18,6 +18,9 @@ struct TimelineCard: View {
         }
     }
 
+    /// Events listed before "Show all": enough that a burst's container starts stay in view.
+    static let recentEventCount = 12
+
     let tick: LiveTick
     let keepHistory: Bool
     @State private var range: Range = .session
@@ -54,7 +57,13 @@ struct TimelineCard: View {
             if let peak = TimelineAnalysis.peak(in: window), window.points.count >= 2 {
                 PeakSummary(peak: peak)
             }
-            EventList(events: Array(window.events.suffix(6).reversed()))
+            EventList(events: Array(window.events.suffix(Self.recentEventCount).reversed()))
+            if window.events.count > Self.recentEventCount {
+                DisclosureGroup("Show all \(window.events.count) events") {
+                    EventList(events: Array(window.events.dropLast(Self.recentEventCount).reversed()))
+                }
+                .font(.caption)
+            }
         }
         .task(id: "\(range.rawValue)-\(tick.sequence / 6)") { await load() }
     }

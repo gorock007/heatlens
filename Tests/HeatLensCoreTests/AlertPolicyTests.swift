@@ -32,14 +32,16 @@ private let busyShop = SyntheticSnapshots.process(pid: 400, name: "swift-build",
 
 /// The `n`th tick of a back-to-back session (each starts where the previous ended), with
 /// projects resolved against a fake filesystem where ~/Developer/FDA and ~/Developer/shop are repositories.
-private func tick(_ n: Int, _ reading: AlertReading, processes: [ProcessSample] = [busyFDA, busyShop]) -> LiveTick {
+/// `start` and `interval` override the back-to-back timing.
+private func tick(_ n: Int, _ reading: AlertReading, processes: [ProcessSample] = [busyFDA, busyShop],
+                  start: Date? = nil, interval: TimeInterval? = nil) -> LiveTick {
     let base = SyntheticSnapshots.snapshot(processes)
     let memory = MemorySnapshot(totalBytes: 18 << 30, freeBytes: 4 << 30, activeBytes: 5 << 30, inactiveBytes: 3 << 30, wiredBytes: 3 << 30,
                                 compressedBytes: 2 << 30, swapUsedBytes: UInt64(reading.swap), swapTotalBytes: 10 << 30, swapOutsDelta: 0,
                                 pressure: .normal, availablePercent: Int(((1 - reading.memoryUsed) * 100).rounded()))
     let system = SystemSample(coreCount: 10, hostBusyFraction: reading.cpu, perCoreBusyFraction: Array(repeating: reading.cpu, count: 10),
                               memory: memory, thermalState: reading.thermal, pmsetCPUSpeedLimit: nil, pmsetCPUSchedulerLimit: nil)
-    let snapshot = ScanSnapshot(startedAt: t0.addingTimeInterval(Double(n) * step), interval: step, system: system,
+    let snapshot = ScanSnapshot(startedAt: start ?? t0.addingTimeInterval(Double(n) * step), interval: interval ?? step, system: system,
                                 processes: base.processes, notices: [])
     let groups = ProvenanceResolver.resolve(snapshot)
     let docker = reading.containers.map { count in
@@ -178,6 +180,41 @@ struct AlertPolicyTests {
         let resumed = hold - 2 + ticks(60)
         #expect(feed(&evaluator, resumed..<(resumed + hold - 1), hot).isEmpty)
         #expect(feed(&evaluator, (resumed + hold - 1)..<(resumed + hold), hot).count == 1)
+    }
+
+    @Test("swap above 2 GB for 10 minutes: one alert at 1 minute, then quiet")
+    func swapHeld() throws {
+        var evaluator = AlertEvaluator(configuration: allOn)
+        let swapped = AlertReading(swap: 3 * gib)
+        let fired = (0..<ticks(10 * 60)).flatMap { n in evaluator.alerts(for: tick(n, swapped)).map { (n, $0) } }
+        let (n, alert) = try #require(fired.first)
+        #expect(fired.count == 1)
+        #expect(alert.rule == .swap)
+        #expect(n == ticks(60) - 1)
+    }
+
+    @Test("ticks shaped like LiveMonitor's, 5 s apart plus 100–200 ms of collection: jitter never resets holding")
+    func jitteredTicks() throws {
+        // LiveMonitor: a tick starts at the previous reading's wall clock and lasts the monotonic
+        // time between readings; the next reading comes a full interval after the tick finished.
+        // Wall clock and monotonic clock are read a few microseconds apart, so allow ±5 ms between them.
+        var generator = SystemRandomNumberGenerator()
+        var evaluator = AlertEvaluator(configuration: allOn)
+        let hot = AlertReading(cpu: 0.95, swap: 3 * gib)
+        var wall = t0
+        var fired: [(TimeInterval, Alert)] = []
+        for n in 0..<ticks(10 * 60) {
+            let elapsed = step + Double.random(in: 0.1...0.2, using: &generator)
+            let skew = Double.random(in: -0.005...0.005, using: &generator)
+            let next = wall.addingTimeInterval(elapsed + skew)
+            fired += evaluator.alerts(for: tick(n, hot, start: wall, interval: elapsed)).map { ($0.firedAt.timeIntervalSince(t0), $0) }
+            wall = next
+        }
+        #expect(fired.map(\.1.rule).sorted { $0.rawValue < $1.rawValue } == [.sustainedCPU, .swap])
+        let swap = try #require(fired.first { $0.1.rule == .swap })
+        #expect(swap.0 >= 60 && swap.0 < 60 + step + 0.3)
+        let cpu = try #require(fired.first { $0.1.rule == .sustainedCPU })
+        #expect(cpu.0 >= 120 && cpu.0 < 120 + step + 0.3)
     }
 
     @Test("a gap resets clearing too, but the cooldown carries across it")

@@ -224,6 +224,17 @@ public struct ConcurrencyRules: Sendable {
 
     // MARK: - Wording
 
+    /// "claude ×2, codex": trees per agent name, most first, then by name; "no agent" last.
+    static func treeNames(_ trees: [Explanation.AgentTree]) -> String {
+        var counts: [String: Int] = [:]
+        for tree in trees where tree.isAgent { counts[tree.name, default: 0] += 1 }
+        var names = counts.sorted { ($1.value, $0.key) < ($0.value, $1.key) }
+            .map { $0.value > 1 ? "\($0.key) ×\($0.value)" : $0.key }
+        let unattached = trees.filter { !$0.isAgent }.count
+        if unattached > 0 { names.append(unattached > 1 ? "no agent ×\(unattached)" : "no agent") }
+        return names.joined(separator: ", ")
+    }
+
     static func explanation(id: String, commands: [CommandStart], containers: [ContainerStart], containersOnly: Bool) -> Explanation {
         var trees: [Explanation.AgentTree] = []
         for tree in commands.map(\.tree) where !trees.contains(tree) { trees.append(tree) }
@@ -232,7 +243,7 @@ public struct ConcurrencyRules: Sendable {
         let window = "\(Int(burstWindow)) s"
         let categories = Set(commands.map(\.category))
         let noun = categories == [.test] ? "test runs" : categories == [.build] ? "builds" : categories == [.install] ? "installs" : "expensive commands"
-        let agentNames = Set(trees.filter(\.isAgent).map(\.name)).sorted()
+        let treeNames = Self.treeNames(trees)
 
         let title: String
         let recommendation: String
@@ -244,8 +255,7 @@ public struct ConcurrencyRules: Sendable {
             var across = ""
             var place = ""
             if trees.count >= 2 {
-                let names = trees.allSatisfy(\.isAgent) ? agentNames : agentNames + ["no agent"]
-                across = " across \(trees.count) \(trees.allSatisfy(\.isAgent) ? "agent" : "process") trees (\(names.joined(separator: ", ")))"
+                across = " across \(trees.count) \(trees.allSatisfy(\.isAgent) ? "agent" : "process") trees (\(treeNames))"
                 if commandProjects.count == 1 { place = " in \(commandProjects[0])" }
             }
             if commandProjects.count >= 2 {
