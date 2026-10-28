@@ -138,3 +138,33 @@ display was asleep or locked during the session. Covered by unit tests; on-scree
 Not driven by hand: the 15-minute auto-pause, Refresh now, the interval picker during a session
 and Custom labels. Each is covered by a unit test (`LiveMonitorTests`, `WorkloadHeuristicsTests`).
 
+## v2 Phase 2 (Live, projects, timeline, history)
+
+Observed on 2026-10-28 with this checkout's Debug app, built with
+`scripts/run-app.sh --build-only` and opened from its generated app bundle. The display
+was awake. System Events opened the concentric-rings status item; the panel was detached
+with a CoreGraphics drag, then driven through accessibility controls and mouse input.
+Screenshots and raw UI output remain in ignored local scratch storage.
+
+| Step | Check | Result | Observation |
+|---|---|---|---|
+| 1 | Launch, panel, initial history state | pass | Keep history was off, Keep for showed 7 days, and the size line read “Nothing saved”; Docker was off. |
+| 2 | Live with Docker off; Projects and expansion | pass | At update 3, four repository-named rows appeared with “Show all 13 projects” and Unattributed, without Docker VM; expanding a repository showed Git attribution and process-group names with process counts. |
+| 3 | Open process detail from Live; repository name | fail | Clicking a Top CPU process row left Live unchanged; project expansion exposed group summaries but no process-detail link, so a repository name in process detail could not be verified from Live. |
+| 4 | Timeline, placeholder commands and inference | pass | The CPU line and busiest-moment projects were visible; within ten seconds the two harmless placeholders produced “npm ci started”, “vitest started” and “2 expensive commands at once”, with an orange “inference” label and a dashed event marker. |
+| 5 | Enable Docker; project attribution and VM row | pass | Docker was already running; one container appeared inside its repository row with Compose working-directory evidence and separate container memory, alongside Docker VM and Unattributed rows. |
+| 6 | Enable history, one-day retention, two minutes, delete | pass | Keep history on with 1 day selected showed 535 KB after 122 seconds of Live; confirming Delete history returned the size to “Nothing saved”, then Keep history was turned off. |
+| 7 | Wording matches history behaviour | fail | “Settings are stored on this Mac. HeatLens keeps no scan history.” remained visible while Keep history was on and Live history occupied 535 KB; it does not explain the Scan/Live distinction. |
+| 8 | Restore settings, stop Live and quit | pass | Live was paused, Docker and Keep history were off, retention was restored to 7 days, history was deleted and the app quit; `pgrep -fl HeatLens` printed nothing (exit 1). |
+
+Both placeholder sleeps exited naturally; no process-stop or container-lifecycle control was
+used. Launch at login and unrelated settings were unchanged. The two failures are recorded
+for follow-up; no source code was changed. These observations supersede the earlier Phase 2
+“not yet driven” note above. Counts and sizes describe this run, not fixed expectations.
+
+To repeat, run `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && scripts/run-app.sh`,
+open the concentric-rings icon and follow steps 1–8. In Live, use a five-second interval and
+keep the panel open; run the two 40-second placeholders from the checkout as specified in
+the brief. Confirm the three timeline events and inference label, then history growth and
+deletion. Restore settings and quit. Activity Monitor comparison and process-detail repository
+attribution outside Live were not checked in this phase.

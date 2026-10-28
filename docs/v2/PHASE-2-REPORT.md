@@ -67,9 +67,11 @@ repository to its process groups and containers, and process detail names the re
 
 ## Not done or not verified
 
-- **The new cards weren't driven in the app.** The Mac's display was asleep or locked during the
-  click-through, so the Projects and Timeline cards and the history settings are built and
-  unit-tested but not yet seen on screen. A click-through is the first task of Phase 3.
+- **The new cards and history settings have now been driven in the app.** See the
+  [Phase 2 click-through](../CLICKTHROUGH.md#v2-phase-2-live-projects-timeline-history): steps
+  1, 2, 4, 5, 6 and 8 passed (launch/defaults, Projects, Timeline/inference, Docker attribution,
+  history growth/deletion and cleanup). Step 3 failed because Live process rows did not open
+  detail; step 7 found the unchanged “keeps no scan history” wording while Live history was on.
 - Projects aren't in the copied reports or the CLI/MCP output yet.
 - The timeline looks back further than the session only while "Keep history" is on, and only over
   periods when Live was running (Live pauses after 15 minutes; background sampling is Phase 4).
