@@ -165,7 +165,11 @@ Results: [PHASE-2-REPORT.md](PHASE-2-REPORT.md).
   each is logged as `ignored`, by name only. A stop, force quit, container stop or batch stop whose
   confirmation is cancelled is logged as `cancelled` with what was offered. Scan results only; Live
   stays read-only.
-- Exit: reproduce the FDA multi-worker Docker test scenario.
+- Exit: reproduce the FDA multi-worker Docker test scenario. ✅ **Met 2026-10-28 (Run 2):** Live
+  attributed both containers and test runs to FDA and showed "2 test runs began within 10 s across
+  2 agent trees (claude, codex) in FDA, plus 2 containers" at High confidence, recommending the
+  agents take turns. Run 1 had no card because its launcher replaced the agent parents. See the
+  [Phase 3 report](PHASE-3-REPORT.md).
 
 ## Phase 4 — background service and polish (P1/P2)
 
