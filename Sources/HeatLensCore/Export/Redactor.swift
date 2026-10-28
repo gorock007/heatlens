@@ -513,7 +513,7 @@ private extension Redactor {
     }
 }
 
-private struct Sanitizer {
+struct Sanitizer {
     let homeDirectory: String
     let username: String
     /// Whole words and path components only: user `al` must not turn /usr/local into /usr/loc<user>.
@@ -637,7 +637,7 @@ private struct Sanitizer {
         return value.count > limit ? String(value.prefix(limit - 1)) + "…" : value
     }
 
-    func evidence(_ evidence: Evidence) -> RedactedEvidence {
+    fileprivate func evidence(_ evidence: Evidence) -> RedactedEvidence {
         if evidence.source == PowerAssertion.evidenceSource {
             return RedactedEvidence(label: text(evidence.label), value: assertionName(evidence.value), source: evidence.source)
         }
@@ -648,7 +648,7 @@ private struct Sanitizer {
         return RedactedEvidence(label: text(evidence.label), value: value, source: text(evidence.source))
     }
 
-    func action(_ action: SuggestedAction) -> RedactedAction {
+    fileprivate func action(_ action: SuggestedAction) -> RedactedAction {
         switch action {
         case .inspect(let identity):
             RedactedAction(kind: "inspect", pid: identity.pid, path: nil)
