@@ -59,6 +59,9 @@ public struct ConcurrencyRules: Sendable {
     private var open: OpenBurst?
     /// Every explanation still worth showing, recent first, at most `limit`.
     public private(set) var current: [Explanation] = []
+    /// Outermost expensive commands running on the last tick, per `Project.id`; projects with
+    /// none are left out (brief 4f, for command watches).
+    public private(set) var runningByProject: [String: Int] = [:]
 
     public init() {}
 
@@ -90,6 +93,7 @@ public struct ConcurrencyRules: Sendable {
             cache[process.identity] = match
             return match
         }
+        runningByProject = Self.countByProject(commands.map(\.process), in: tick.projects)
         var newCommands: [CommandStart] = []
         var byPID: [Int32: ProcessSample]?
         for (process, match) in commands where !seenCommands.contains(process.identity) {
@@ -194,6 +198,21 @@ public struct ConcurrencyRules: Sendable {
                 && container.at <= last.addingTimeInterval(Self.burstWindow + interval)
         }
         return (commands, containers)
+    }
+
+    /// How many of `processes` are in each project's row.
+    static func countByProject(_ processes: [ProcessSample], in breakdown: ProjectBreakdown) -> [String: Int] {
+        guard !processes.isEmpty else { return [:] }
+        var projectOf: [ProcessIdentity: String] = [:]
+        for usage in breakdown.usages {
+            guard let id = usage.project?.id else { continue }
+            for identity in usage.processes { projectOf[identity] = id }
+        }
+        var counts: [String: Int] = [:]
+        for process in processes {
+            if let id = projectOf[process.identity] { counts[id, default: 0] += 1 }
+        }
+        return counts
     }
 
     static func isBurst(_ commands: [CommandStart]) -> Bool {

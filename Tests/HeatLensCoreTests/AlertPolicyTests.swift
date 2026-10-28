@@ -210,7 +210,7 @@ struct AlertPolicyTests {
             fired += evaluator.alerts(for: tick(n, hot, start: wall, interval: elapsed)).map { ($0.firedAt.timeIntervalSince(t0), $0) }
             wall = next
         }
-        #expect(fired.map(\.1.rule).sorted { $0.rawValue < $1.rawValue } == [.sustainedCPU, .swap])
+        #expect(fired.compactMap(\.1.rule).sorted { $0.rawValue < $1.rawValue } == [.sustainedCPU, .swap])
         let swap = try #require(fired.first { $0.1.rule == .swap })
         #expect(swap.0 >= 60 && swap.0 < 60 + step + 0.3)
         let cpu = try #require(fired.first { $0.1.rule == .sustainedCPU })
@@ -263,10 +263,11 @@ struct AlertPolicyTests {
         #expect(feed(cool).isEmpty)
         // Asleep for an hour while cool: clearing (60 s) restarts at wake.
         #expect(feed(cool, span: 3600).isEmpty)
-        #expect(evaluator.isActive)
+        #expect(!evaluator.isArmed(.sustainedCPU))
         #expect(feed(cool).isEmpty)
-        #expect(evaluator.isActive)
+        #expect(!evaluator.isArmed(.sustainedCPU))
         #expect(feed(cool).isEmpty)
+        #expect(evaluator.isArmed(.sustainedCPU))
         #expect(!evaluator.isActive)
         // Re-armed, and the 15-minute cooldown (counted from the firing, before the sleep) has passed.
         #expect(feed(hot).isEmpty)
@@ -276,7 +277,7 @@ struct AlertPolicyTests {
         #expect(feed(hot).count == 1)
     }
 
-    @Test("isActive: a rule holding or fired and not yet cleared; never while alerts or the rule are off")
+    @Test("isActive: a rule holding or firing on this tick; never while alerts or the rule are off")
     func isActive() {
         var evaluator = AlertEvaluator(configuration: allOn)
         #expect(!evaluator.isActive)
@@ -297,6 +298,28 @@ struct AlertPolicyTests {
         // Swap clears at once below 1 GB.
         _ = feed(&evaluator, 100..<101, AlertReading())
         #expect(!evaluator.isActive)
+    }
+
+    // CPU's in-between (70%) is busy cores, an incident trigger of its own; thermal has no in-between.
+    @Test("after a firing, a value settling between off and on ends the incident cadence 120 s later",
+          arguments: alertCases.filter { ![.sustainedCPU, .thermal].contains($0.kind) })
+    func incidentEndsAfterFiring(_ c: AlertCase) {
+        var evaluator = AlertEvaluator(configuration: allOn)
+        var tracker = IncidentTracker()
+        var firedAt: Date?
+        var endedAt: Date?
+        for n in 0..<ticks(60 * 60) {
+            let t = tick(n, c.reading(n < ticks(c.rule.sustain) ? c.high : c.middle))
+            let fired = evaluator.alerts(for: t)
+            let incident = tracker.update(t, alertsActive: evaluator.isActive)
+            if !fired.isEmpty { firedAt = fired[0].firedAt }
+            if firedAt != nil, !incident, endedAt == nil { endedAt = t.snapshot.startedAt.addingTimeInterval(t.snapshot.interval) }
+            // Once ended, it stays ended: the value never holds at `on` again.
+            if endedAt != nil { #expect(!incident, "tick \(n)") }
+        }
+        #expect(firedAt == t0.addingTimeInterval(c.rule.sustain))
+        #expect(endedAt == firedAt.map { $0.addingTimeInterval(IncidentTracker.hold) })
+        #expect(!evaluator.isArmed(c.kind))
     }
 
     @Test("a gap resets clearing too, but the cooldown carries across it")
@@ -335,7 +358,7 @@ struct AlertPolicyTests {
         var evaluator = AlertEvaluator(configuration: allOn)
         let all = AlertReading(cpu: 0.95, memoryUsed: 0.93, swap: 3 * gib, thermal: .serious, containers: 7)
         let fired = feed(&evaluator, 0..<ticks(2 * 60), all)
-        #expect(Set(fired.map(\.rule)) == Set(AlertRule.Kind.allCases))
+        #expect(Set(fired.compactMap(\.rule)) == Set(AlertRule.Kind.allCases))
         let byRule = Dictionary(uniqueKeysWithValues: fired.map { ($0.rule, $0) })
 
         let cpu = try #require(byRule[.sustainedCPU])

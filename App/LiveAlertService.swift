@@ -54,7 +54,7 @@ final class LiveAlertService {
         let content = UNMutableNotificationContent()
         content.title = alert.title
         content.body = (alert.projects.isEmpty ? "" : alert.projects.joined(separator: ", ") + " · ") + alert.suggestion
-        let request = UNNotificationRequest(identifier: Self.notificationPrefix + alert.rule.rawValue, content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: Self.notificationPrefix + (alert.rule?.rawValue ?? alert.id), content: content, trigger: nil)
         // Settings asks when the switch is turned on; macOS asks the user at most once.
         Task {
             let center = UNUserNotificationCenter.current()

@@ -96,7 +96,8 @@ public struct IncidentTracker: Sendable {
     public init() {}
 
     /// Feeds one tick; true while the incident holds. `alertsActive`: an alert rule (or watch)
-    /// is holding or has fired and not yet cleared (`AlertEvaluator.isActive`).
+    /// is holding at or above its threshold, or fired on this tick (`AlertEvaluator.isActive`).
+    /// So a firing ends the incident `hold` later, unless something else triggers, however long the value stays up.
     public mutating func update(_ tick: LiveTick, alertsActive: Bool) -> Bool {
         let end = tick.snapshot.startedAt.addingTimeInterval(tick.snapshot.interval)
         if alertsActive || Self.triggers(tick) { lastTrigger = end }

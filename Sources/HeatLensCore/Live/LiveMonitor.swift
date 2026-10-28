@@ -82,6 +82,9 @@ public struct LiveTick: Sendable {
     public var explanations: [Explanation] = []
     /// Alerts that fired on this tick (brief 3c); empty on most ticks.
     public var alerts: [Alert] = []
+    /// Outermost expensive commands running at the end of this tick, per `Project.id`; projects
+    /// with none are left out (brief 4f). Empty on ticks not made by `LiveMonitor`.
+    public var runningCommandsByProject: [String: Int] = [:]
     /// The wait planned before this tick (warm-up for the first). Nil on ticks not made by
     /// `LiveMonitor`. A span over 3× this means the Mac slept (`AlertEvaluator`).
     public var plannedInterval: TimeInterval? = nil
@@ -253,6 +256,7 @@ public actor LiveMonitor {
                 tick.events = detector.events(for: tick)
                 let explained = concurrency.explanations(for: tick)
                 tick.explanations = concurrency.current
+                tick.runningCommandsByProject = concurrency.runningByProject
                 tick.events += explained.map { $0.timelineEvent(at: snapshot.startedAt.addingTimeInterval(snapshot.interval)) }
                 tick.plannedInterval = planned
                 tick.alerts = alertEvaluator.alerts(for: tick)

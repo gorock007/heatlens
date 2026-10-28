@@ -106,10 +106,14 @@ public struct AlertConfiguration: Hashable, Sendable {
     /// "Alert me while Live is running": nothing is checked while this is off.
     public var isEnabled: Bool
     public var rules: [AlertRule]
+    /// Per-project watches (brief 4f), checked only while `isEnabled` is on.
+    public var watches: [ProjectWatch]
 
-    public init(isEnabled: Bool = false, rules: [AlertRule] = AlertRule.Kind.allCases.map(AlertRule.defaults)) {
+    public init(isEnabled: Bool = false, rules: [AlertRule] = AlertRule.Kind.allCases.map(AlertRule.defaults),
+                watches: [ProjectWatch] = []) {
         self.isEnabled = isEnabled
         self.rules = rules
+        self.watches = watches
     }
 
     public static let off = AlertConfiguration()
@@ -117,8 +121,25 @@ public struct AlertConfiguration: Hashable, Sendable {
 
 /// One alert that fired on a Live tick. Names only: no paths, no argv.
 public struct Alert: Hashable, Sendable, Identifiable {
+    /// The watch a project alert came from: names and a hash, never the folder.
+    public struct Watch: Hashable, Sendable {
+        public let projectName: String
+        public let metric: ProjectWatch.Metric
+        /// `ProjectWatch.hash(of:)` of the project's ID, for a stable notification identifier.
+        public let projectHash: String
+
+        public init(projectName: String, metric: ProjectWatch.Metric, projectHash: String) {
+            self.projectName = projectName
+            self.metric = metric
+            self.projectHash = projectHash
+        }
+    }
+
     public let id: String
-    public let rule: AlertRule.Kind
+    /// The system rule that fired; nil for a watch.
+    public let rule: AlertRule.Kind?
+    /// The watch that fired; nil for a system rule.
+    public let watch: Watch?
     /// The end of the tick it fired on.
     public let firedAt: Date
     /// "CPU above 80% for 2 minutes".
@@ -130,10 +151,11 @@ public struct Alert: Hashable, Sendable, Identifiable {
     /// Advice only; an alert never stops or changes anything.
     public let suggestion: String
 
-    public init(id: String, rule: AlertRule.Kind, firedAt: Date, title: String, observations: [Evidence], projects: [String],
-                suggestion: String) {
+    public init(id: String, rule: AlertRule.Kind?, watch: Watch? = nil, firedAt: Date, title: String, observations: [Evidence],
+                projects: [String], suggestion: String) {
         self.id = id
         self.rule = rule
+        self.watch = watch
         self.firedAt = firedAt
         self.title = String(title.prefix(200))
         self.observations = observations
@@ -147,12 +169,105 @@ public struct Alert: Hashable, Sendable, Identifiable {
     }
 }
 
+/// One rule's state machine, shared by `AlertEvaluator`'s system rules and `WatchlistEvaluator`'s
+/// watches: it fires once when the value has stayed at or above `on` for `sustain`, then can't fire
+/// again until the value has stayed below `off` for `clear` and `cooldown` has passed since it
+/// last fired. Holds no timer: time is the ticks' own spans.
+public struct AlertRuleState: Hashable, Sendable {
+    /// What a rule or a watch metric checks against; `AlertRule`'s fields, already clamped there.
+    public struct Limits: Hashable, Sendable {
+        public let on: Double
+        public let off: Double
+        public let sustain: TimeInterval
+        public let clear: TimeInterval
+        public let cooldown: TimeInterval
+
+        public init(on: Double, off: Double, sustain: TimeInterval, clear: TimeInterval, cooldown: TimeInterval) {
+            self.on = on
+            self.off = off
+            self.sustain = sustain
+            self.clear = clear
+            self.cooldown = cooldown
+        }
+    }
+
+    /// When the value first reached `on` in the current run of ticks.
+    var holdingSince: Date?
+    /// When the value first fell below `off` after firing.
+    var clearingSince: Date?
+    /// False from a firing until the value has cleared.
+    public private(set) var isArmed = true
+    public private(set) var lastFired: Date?
+    /// The last step fired.
+    var firedOnLastStep = false
+
+    public init() {}
+
+    /// Holding (at or above `on`, the sustain timer running), or fired on the last step. A value
+    /// that stays up after firing, or settles between `off` and `on`, doesn't count: the incident
+    /// cadence then ends `IncidentTracker.hold` after the firing.
+    public var isActive: Bool { holdingSince != nil || firedOnLastStep }
+
+    /// A gap, a sleep, or a value that can't be read: the value wasn't seen, so holding and
+    /// clearing start over. The cooldown is kept.
+    public mutating func resetTimers() {
+        holdingSince = nil
+        clearingSince = nil
+        firedOnLastStep = false
+    }
+
+    /// Feeds one tick's value, seen over `start...end`. Returns how long it held when it fires on
+    /// this tick. A nil value (unreadable, the rule off, the project absent) resets the timers and
+    /// never fires.
+    public mutating func step(_ value: Double?, limits: Limits, start: Date, end: Date) -> TimeInterval? {
+        firedOnLastStep = false
+        guard let value else {
+            resetTimers()
+            return nil
+        }
+        if !isArmed {
+            if value < limits.off {
+                let since = clearingSince ?? start
+                clearingSince = since
+                if end.timeIntervalSince(since) >= limits.clear {
+                    isArmed = true
+                    clearingSince = nil
+                }
+            } else {
+                clearingSince = nil
+            }
+            return nil
+        }
+        guard value >= limits.on else {
+            holdingSince = nil
+            return nil
+        }
+        let since = holdingSince ?? start
+        holdingSince = since
+        let held = end.timeIntervalSince(since)
+        guard held >= limits.sustain else { return nil }
+        if let lastFired, end.timeIntervalSince(lastFired) < limits.cooldown { return nil }
+        lastFired = end
+        isArmed = false
+        resetTimers()
+        firedOnLastStep = true
+        return held
+    }
+}
+
+extension AlertRule {
+    public var limits: AlertRuleState.Limits {
+        AlertRuleState.Limits(on: on, off: off, sustain: sustain, clear: clear, cooldown: cooldown)
+    }
+}
+
 /// Checks `AlertConfiguration` against Live ticks, fed one at a time like `TimelineDetector`.
 /// Holds no timer: it only looks at the ticks it's given, so nothing is checked when Live isn't
 /// running. A tick that doesn't start where the previous one ended (a pause, a new session)
 /// resets the hold and clear timers, so a rule never fires on time it didn't see. So does a tick
 /// lasting more than `sleepFactor` × its planned interval (the Mac slept), and its timers then
 /// start at the tick's end. The cooldown is kept across both, for as long as the evaluator lives.
+/// Watches (`AlertConfiguration.watches`) go through the same `AlertRuleState`.
 public struct AlertEvaluator: Sendable {
     /// Ticks within this of each other count as back to back.
     public static let gapTolerance: TimeInterval = 1
@@ -162,92 +277,58 @@ public struct AlertEvaluator: Sendable {
     public static let projectLimit = 3
     static let nameLimit = 40
 
-    struct State: Sendable {
-        /// When the value first reached `on` in the current run of ticks.
-        var holdingSince: Date?
-        /// When the value first fell below `off` after firing.
-        var clearingSince: Date?
-        /// False from a firing until the value has cleared.
-        var armed = true
-        var lastFired: Date?
-
-        mutating func resetTimers() {
-            holdingSince = nil
-            clearingSince = nil
-        }
-    }
-
     public var configuration: AlertConfiguration
-    private var states: [AlertRule.Kind: State] = [:]
+    private var states: [AlertRule.Kind: AlertRuleState] = [:]
+    private var watchlist = WatchlistEvaluator()
     private var lastEnd: Date?
 
     public init(configuration: AlertConfiguration = .off) {
         self.configuration = configuration
     }
 
-    /// True while an enabled rule is holding (at or above `on`) or has fired and not yet cleared.
-    /// `IncidentTracker` treats that as an incident.
+    /// True while an enabled rule or watch is holding (at or above `on`, its sustain timer
+    /// running), or fired on the last tick. `IncidentTracker` treats that as an incident and holds
+    /// it for 2 minutes. False while alerts are off.
     public var isActive: Bool {
         guard configuration.isEnabled else { return false }
         return configuration.rules.contains { rule in
-            guard rule.isEnabled, let state = states[rule.kind] else { return false }
-            return state.holdingSince != nil || !state.armed
-        }
+            rule.isEnabled && states[rule.kind]?.isActive == true
+        } || watchlist.isActive(configuration.watches)
+    }
+
+    /// False from the rule's firing until its value has cleared.
+    func isArmed(_ kind: AlertRule.Kind) -> Bool {
+        states[kind]?.isArmed ?? true
     }
 
     /// The alerts that fired on this tick.
     public mutating func alerts(for tick: LiveTick) -> [Alert] {
         var start = tick.snapshot.startedAt
         let end = start.addingTimeInterval(tick.snapshot.interval)
-        if let lastEnd, abs(start.timeIntervalSince(lastEnd)) > Self.gapTolerance {
-            for kind in states.keys { states[kind]?.resetTimers() }
-        }
+        var reset = false
+        if let lastEnd, abs(start.timeIntervalSince(lastEnd)) > Self.gapTolerance { reset = true }
         if let planned = tick.plannedInterval, tick.snapshot.interval > Self.sleepFactor * planned {
-            for kind in states.keys { states[kind]?.resetTimers() }
+            reset = true
             // The value wasn't seen while the Mac slept: holding and clearing start now.
             start = end
         }
         lastEnd = end
-        guard configuration.isEnabled else {
+        if reset || !configuration.isEnabled {
             for kind in states.keys { states[kind]?.resetTimers() }
-            return []
+            watchlist.resetTimers()
         }
+        guard configuration.isEnabled else { return [] }
 
         var fired: [Alert] = []
         for rule in configuration.rules {
-            var state = states[rule.kind] ?? State()
-            defer { states[rule.kind] = state }
-            guard rule.isEnabled, let value = Self.value(rule.kind, in: tick) else {
-                state.resetTimers()
-                continue
+            var state = states[rule.kind] ?? AlertRuleState()
+            let value = rule.isEnabled ? Self.value(rule.kind, in: tick) : nil
+            if let held = state.step(value, limits: rule.limits, start: start, end: end), let value {
+                fired.append(Self.alert(rule, value: value, held: held, tick: tick, at: end))
             }
-            if !state.armed {
-                if value < rule.off {
-                    let since = state.clearingSince ?? start
-                    state.clearingSince = since
-                    if end.timeIntervalSince(since) >= rule.clear {
-                        state.armed = true
-                        state.clearingSince = nil
-                    }
-                } else {
-                    state.clearingSince = nil
-                }
-                continue
-            }
-            guard value >= rule.on else {
-                state.holdingSince = nil
-                continue
-            }
-            let since = state.holdingSince ?? start
-            state.holdingSince = since
-            let held = end.timeIntervalSince(since)
-            guard held >= rule.sustain else { continue }
-            if let last = state.lastFired, end.timeIntervalSince(last) < rule.cooldown { continue }
-            state.lastFired = end
-            state.armed = false
-            state.resetTimers()
-            fired.append(Self.alert(rule, value: value, held: held, tick: tick, at: end))
+            states[rule.kind] = state
         }
+        fired += watchlist.alerts(for: tick, watches: configuration.watches, start: start, end: end)
         return fired
     }
 
