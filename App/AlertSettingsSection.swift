@@ -3,7 +3,8 @@ import HeatLensCore
 import SwiftUI
 
 /// Live alerts (brief 3c): off by default. One master switch, then a switch and an *on*
-/// threshold per rule; the *off* threshold follows from the choice. Checked only while Live runs.
+/// threshold per rule; the *off* threshold follows from the choice. Checked while Live runs or
+/// HeatLens is watching in the background (docs/v2/ADR-0008).
 struct AlertSettingsSection: View {
     let settings: SettingsModel
 
@@ -13,7 +14,9 @@ struct AlertSettingsSection: View {
                 get: { settings.liveAlertsEnabled },
                 set: { settings.setLiveAlerts($0) }
             ))
-            Text("Checked only while Live mode is running. HeatLens does nothing in the background. Live stops when the panel closes, so drag the panel off the menu bar to keep it open.")
+            Text(settings.keepWatchingInBackground
+                 ? "Checked while Live runs or HeatLens is watching in the background, until Pause or Quit."
+                 : "Checked while Live runs or HeatLens is watching in the background. Keep watching in the background is off, so Live stops when the panel closes: turn it on below, or drag the panel off the menu bar to keep it open.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

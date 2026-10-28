@@ -3,6 +3,8 @@ import SwiftUI
 
 struct SettingsView: View {
     let settings: SettingsModel
+    /// For the Background group's status line.
+    let live: LiveModel
     let onDone: () -> Void
     @State private var updates = UpdateChecker()
 
@@ -87,6 +89,7 @@ struct SettingsView: View {
 
                 ThermalAlertSection(settings: settings)
                 AlertSettingsSection(settings: settings)
+                BackgroundSection(settings: settings, live: live)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle("Open HeatLens with ⌃⌥H", isOn: $settings.globalHotkeyEnabled)
@@ -146,6 +149,30 @@ private struct MonitoringSourcesSection: View {
             Text("Changes apply to the next scan or live start.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// "Keep watching in the background" (docs/v2/ADR-0008 §4): off by default; Quit stops it.
+private struct BackgroundSection: View {
+    @Bindable var settings: SettingsModel
+    let live: LiveModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Background")
+                .font(.subheadline.weight(.semibold))
+            Toggle("Keep watching in the background", isOn: $settings.keepWatchingInBackground)
+            Text("After you close the panel, HeatLens keeps sampling every 30 s (60 s on battery, 5–10 s while something is busy) so alerts and history keep working. Quit HeatLens to stop.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if settings.keepWatchingInBackground {
+                Text(live.statusLine)
+                    .font(.caption)
+                    .foregroundStyle(live.isRunning ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

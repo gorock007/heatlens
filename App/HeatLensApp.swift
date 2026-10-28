@@ -1,5 +1,6 @@
 import AppKit
 import HeatLensCore
+import Observation
 import SwiftUI
 
 @main
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var thermalAlerts: ThermalAlertService?
     private var liveAlerts: LiveAlertService?
     private var hotkey: GlobalHotkey?
+    private var live: LiveModel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let settings = SettingsModel()
@@ -57,9 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let statusPanel = StatusPanelController {
             PopoverView(model: model, live: live, stopService: stopService, containerStopService: containerStopService)
         }
-        // Live mode samples only while someone is looking (docs/v2/ADR-0003).
-        statusPanel.onClose = { live.stop() }
+        // v1's Live samples only while someone is looking (docs/v2/ADR-0003); with "Keep watching
+        // in the background" on, a close drops to the background cadence (ADR-0008 §4).
+        statusPanel.onOpen = { live.viewerOpened() }
+        statusPanel.onClose = { live.viewerClosed() }
         self.statusPanel = statusPanel
+        self.live = live
+        followLiveStatus()
         thermalAlerts = ThermalAlertService(model: model) { statusPanel.show() }
         // After ThermalAlertService, the notification delegate that presents and opens these too.
         liveAlerts = LiveAlertService(live: live, settings: settings)
@@ -67,5 +73,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         thermalAlerts?.simulateFromLaunchArguments()
         #endif
+    }
+
+    /// The status item's tooltip names the mode.
+    private func followLiveStatus() {
+        guard let live else { return }
+        let toolTip = withObservationTracking {
+            live.toolTip
+        } onChange: {
+            Task { @MainActor [weak self] in self?.followLiveStatus() }
+        }
+        statusPanel?.toolTip = toolTip
     }
 }

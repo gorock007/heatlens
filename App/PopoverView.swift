@@ -12,6 +12,9 @@ struct PopoverView: View {
     @State private var showingSettings = false
     @State private var mode: Mode = .scan
 
+    /// The Live view is on screen, so `LiveModel` follows every tick.
+    private var liveShowing: Bool { mode == .live && !showingSettings }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Header(showingSettings: showingSettings, settingsDisabled: model.isScanning) {
@@ -26,12 +29,13 @@ struct PopoverView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .onChange(of: mode) { _, newMode in
-                    if newMode == .scan { live.stop() }
+                    // Stops v1's Live; with Keep watching on, drops to the background cadence.
+                    if newMode == .scan { live.viewerDetached() }
                 }
             }
 
             if showingSettings {
-                SettingsView(settings: model.settings) { showingSettings = false }
+                SettingsView(settings: model.settings, live: live) { showingSettings = false }
             } else if mode == .live {
                 LiveView(model: live)
             } else {
@@ -63,9 +67,12 @@ struct PopoverView: View {
         }
         .padding(16)
         .frame(width: 300)
-        // New Settings switches take effect at once in a running live session.
+        // Settings changed while it was open restart a running session once, when it closes.
         .onChange(of: showingSettings) { _, isShowing in
-            if !isShowing, live.isRunning { live.start() }
+            live.setSettingsOpen(isShowing)
+        }
+        .onChange(of: liveShowing, initial: true) { _, showing in
+            live.setLiveShowing(showing)
         }
     }
 }

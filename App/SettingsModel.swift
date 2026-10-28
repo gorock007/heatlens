@@ -39,6 +39,7 @@ final class SettingsModel {
         static let keepHistory = "keepHistory"
         static let historyRetentionDays = "historyRetentionDays"
         static let liveAlertsEnabled = "liveAlertsEnabled"
+        static let keepWatchingInBackground = "keepWatchingInBackground"
         static func alertRuleEnabled(_ kind: AlertRule.Kind) -> String { "liveAlert.\(kind.rawValue).enabled" }
         static func alertThreshold(_ kind: AlertRule.Kind) -> String { "liveAlert.\(kind.rawValue).on" }
     }
@@ -110,6 +111,11 @@ final class SettingsModel {
     var liveAlertsEnabled: Bool {
         didSet { defaults.set(liveAlertsEnabled, forKey: Key.liveAlertsEnabled) }
     }
+    /// Off by default (docs/v2/ADR-0008 §4): after the panel closes, Live keeps sampling at
+    /// `SamplingPolicy`'s cadence until Pause or Quit, so alerts and history keep working.
+    var keepWatchingInBackground: Bool {
+        didSet { defaults.set(keepWatchingInBackground, forKey: Key.keepWatchingInBackground) }
+    }
     /// Each rule's own switch; all on once the master switch is on.
     var alertRulesEnabled: [AlertRule.Kind: Bool] {
         didSet { for (kind, enabled) in alertRulesEnabled { defaults.set(enabled, forKey: Key.alertRuleEnabled(kind)) } }
@@ -147,6 +153,7 @@ final class SettingsModel {
         let storedRetention = defaults.integer(forKey: Key.historyRetentionDays)
         historyRetentionDays = HistoryStore.retentionChoices.contains(storedRetention) ? storedRetention : HistoryStore.defaultRetentionDays
         liveAlertsEnabled = defaults.bool(forKey: Key.liveAlertsEnabled)
+        keepWatchingInBackground = defaults.bool(forKey: Key.keepWatchingInBackground)
         var rulesEnabled: [AlertRule.Kind: Bool] = [:]
         var thresholds: [AlertRule.Kind: Double] = [:]
         for kind in AlertRule.Kind.allCases {

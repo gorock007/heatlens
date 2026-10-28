@@ -2,7 +2,8 @@ import SwiftUI
 import HeatLensCore
 
 /// Live mode (PRD-v2 Phase 1): refreshes every 2, 5 or 10 seconds while you watch. Nothing is
-/// sampled until Start, and closing the panel stops it.
+/// sampled until Start, and closing the panel stops it, unless "Keep watching in the background"
+/// is on: then it shows the background cadence's ticks too (docs/v2/ADR-0008 §4).
 struct LiveView: View {
     let model: LiveModel
 
@@ -56,9 +57,8 @@ struct LiveView: View {
                         HardwareCard(sample: tick.hardware)
                         // No onInspect: Live rows change under the pointer, so stops come only from a scan result (ADR-0007).
                         DockerCard(snapshot: tick.docker.availability == .disabled ? nil : tick.docker, onTurnOn: {
-                            // Same switch as Settings; restart so the session picks it up.
+                            // Same switch as Settings; LiveModel restarts the session with it.
                             model.settings.dockerEnabled = true
-                            if model.isRunning { model.start() }
                         })
                         ForEach(tick.snapshot.notices, id: \.self) { notice in
                             Label(notice, systemImage: "info.circle")
@@ -73,7 +73,9 @@ struct LiveView: View {
             } else {
                 Text(model.isRunning
                      ? "Measuring…"
-                     : "Live mode refreshes CPU, energy, memory and hardware sensors while this panel is open, and Docker if you turn it on. Nothing runs until you press Start.")
+                     : model.settings.keepWatchingInBackground
+                        ? "Live mode refreshes CPU, energy, memory and hardware sensors, and Docker if you turn it on. Keep watching in the background is on, so after Start it goes on sampling when you close the panel, until Pause or Quit."
+                        : "Live mode refreshes CPU, energy, memory and hardware sensors while this panel is open, and Docker if you turn it on. Nothing runs until you press Start.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -126,11 +128,16 @@ private struct Controls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                if model.isRunning {
-                    Button("Pause", systemImage: "pause.fill") { model.stop() }
+                if model.isForeground {
+                    Button("Pause", systemImage: "pause.fill") { model.pause() }
                     Button("Refresh now", systemImage: "arrow.clockwise") { model.refreshNow() }
                         .labelStyle(.iconOnly)
                         .help("Refresh now")
+                } else if model.isBackground {
+                    Button("Watch live", systemImage: "play.fill") { model.start() }
+                        .help("Refresh at the interval on the right while the panel is open")
+                    Button("Pause", systemImage: "pause.fill") { model.pause() }
+                        .help("Stop watching until Start live or the next launch")
                 } else {
                     Button("Start live", systemImage: "play.fill") { model.start() }
                         .buttonStyle(.borderedProminent)
@@ -146,7 +153,11 @@ private struct Controls: View {
                 .fixedSize()
                 .help("Refresh interval")
             }
-            if case .stopped(let reason?) = model.state {
+            if model.isBackground {
+                Text("Watching in the background · \(model.cadence ?? "starting")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else if case .stopped(let reason?) = model.state {
                 Text(reason)
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -155,11 +166,14 @@ private struct Controls: View {
                     .font(.caption2)
                     .foregroundStyle(.orange)
             } else if let tick = model.latest, model.isRunning {
-                Text("Live · update \(tick.sequence) · \(String(format: "%.0f", tick.collectionSeconds * 1000)) ms to collect · stops when you close the panel")
+                Text("Live · update \(tick.sequence) · \(String(format: "%.0f", tick.collectionSeconds * 1000)) ms to collect · "
+                     + (model.settings.keepWatchingInBackground ? "back to the background when you close the panel" : "stops when you close the panel"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-            } else if model.latest != nil {
-                Text("Paused. Showing the last update.")
+            } else if model.latest != nil || model.status.mode == .paused(.user) {
+                Text(model.settings.keepWatchingInBackground && model.status.mode == .paused(.user)
+                     ? "Paused until Start live or the next launch. Showing the last update."
+                     : "Paused. Showing the last update.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

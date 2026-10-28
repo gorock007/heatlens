@@ -9,8 +9,15 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel: StatusPanel
     private var isDetached = false
-    /// Called whenever the panel closes, so Live mode stops sampling.
+    /// Called whenever the panel opens.
+    var onOpen: (() -> Void)?
+    /// Called whenever the panel closes, so Live mode stops sampling or drops to the background cadence.
     var onClose: (() -> Void)?
+    /// The status item's tooltip, which names the Live mode ("HeatLens: watching in the background").
+    var toolTip: String? {
+        get { statusItem.button?.toolTip }
+        set { statusItem.button?.toolTip = newValue }
+    }
     /// Where the panel's top edge sits: under the icon, or wherever the user dropped it.
     private var anchorTop: CGFloat = 0
 
@@ -61,6 +68,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         panel.layoutIfNeeded()
         positionUnderIcon()
         panel.makeKeyAndOrderFront(nil)
+        onOpen?()
     }
 
     private func close() {
