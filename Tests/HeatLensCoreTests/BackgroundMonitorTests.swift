@@ -5,22 +5,22 @@ import Testing
 private struct ListFailed: Error {}
 
 /// Call n (from 1) returns one process with a clock that advances exactly 1 s per call. Counts
-/// calls, and can throw on a chosen call.
+/// calls, and can throw on chosen calls.
 private final class ScriptedProcessSampler: ProcessSampling, @unchecked Sendable {
     static let base = Date(timeIntervalSince1970: 2_000_000_000)
     private let lock = NSLock()
     private var calls = 0
-    private let failOnCall: Int?
+    private let failOnCalls: Set<Int>
 
-    init(failOnCall: Int? = nil) {
-        self.failOnCall = failOnCall
+    init(failOnCalls: Set<Int> = []) {
+        self.failOnCalls = failOnCalls
     }
 
     var callCount: Int { lock.withLock { calls } }
 
     func snapshot() throws -> ProcessCounters {
         let call = lock.withLock { calls += 1; return calls }
-        if call == failOnCall { throw ListFailed() }
+        if failOnCalls.contains(call) { throw ListFailed() }
         let start = Int64(Self.base.timeIntervalSince1970 * 1_000_000) - 3_600_000_000
         let process = ProcessReading(identity: ProcessIdentity(pid: 10, startTimeMicros: start), parentPID: 1, owner: .currentUser,
                                      name: "proc-10", cpu: CPUTime(userNanoseconds: UInt64(call) * 10_000_000, systemNanoseconds: 0),
@@ -72,13 +72,18 @@ private func power(_ source: PowerSourceKind) -> PowerContext {
 private final class SleepRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [TimeInterval] = []
+    private let scale: Double
+
+    init(millisecondsPerSecond scale: Double = 1) {
+        self.scale = scale
+    }
 
     var sleeps: [TimeInterval] { lock.withLock { recorded } }
 
     var sleep: @Sendable (TimeInterval) async throws -> Void {
         { [self] seconds in
             lock.withLock { recorded.append(seconds) }
-            try await Task.sleep(for: .milliseconds(seconds))
+            try await Task.sleep(for: .milliseconds(seconds * scale))
         }
     }
 
@@ -136,13 +141,17 @@ private func collect(_ stream: AsyncStream<BackgroundEvent>, into log: EventLog)
 private struct Fixture {
     let processes: ScriptedProcessSampler
     let recorder = SleepRecorder()
+    /// The waits before retries of a failed session, apart from the session's own.
+    let retries: SleepRecorder
     let clock = TestClock()
     let monitor: BackgroundMonitor
 
-    init(processes: ScriptedProcessSampler = ScriptedProcessSampler(), system: ScriptedSystemSampler = ScriptedSystemSampler()) {
+    init(processes: ScriptedProcessSampler = ScriptedProcessSampler(), system: ScriptedSystemSampler = ScriptedSystemSampler(),
+         retries: SleepRecorder = SleepRecorder()) {
         self.processes = processes
+        self.retries = retries
         let live = LiveMonitor(processSampler: processes, systemSampler: system, sleep: recorder.sleep)
-        monitor = BackgroundMonitor(monitor: live, now: clock.now)
+        monitor = BackgroundMonitor(monitor: live, now: clock.now, retrySleep: retries.sleep)
     }
 
     /// Process-list reads so far: one per tick, plus the baseline at each session's start.
@@ -428,24 +437,66 @@ struct BackgroundMonitorTests {
         collector.cancel()
     }
 
-    @Test("A failing process list stops sampling with the reason, until resume")
+    @Test("Keep watching off: a failing process list stops sampling with the reason, until resume")
     func failure() async {
-        let fixture = Fixture(processes: ScriptedProcessSampler(failOnCall: 3))
+        let fixture = Fixture(processes: ScriptedProcessSampler(failOnCalls: [3]))
         let monitor = fixture.monitor
         let log = EventLog()
         let collector = collect(await monitor.subscribe(.summary), into: log)
-        await monitor.configure(configuration(), keepWatching: true)
+        await monitor.configure(configuration(), keepWatching: false)
+        await monitor.viewerAttached(interval: 5)
         #expect(await eventually { await !monitor.isSampling })
         guard case .paused(.failed) = await monitor.status.mode else {
             Issue.record("expected a failure pause, got \(await monitor.status.mode)")
             return
         }
         #expect(await eventually { log.stops.count == 1 })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(fixture.retries.sleeps.isEmpty)
+        #expect(await !monitor.isSampling)
         await monitor.resume()
         #expect(await eventually { fixture.calls >= 6 })
         #expect(await monitor.isSampling)
         await monitor.pause()
         collector.cancel()
+    }
+
+    @Test("Keep watching on: a failed session is retried after 30 s, then 2 min, and samples again")
+    func backgroundRetry() async {
+        // The baseline read fails in the first session and in the first retry; the second works.
+        let fixture = Fixture(processes: ScriptedProcessSampler(failOnCalls: [1, 2]))
+        let monitor = fixture.monitor
+        let log = EventLog()
+        let collector = collect(await monitor.subscribe(.full), into: log)
+        await monitor.configure(configuration(), keepWatching: true)
+        #expect(await eventually { log.ticks >= 2 })
+        #expect(fixture.retries.sleeps == [30, 120])
+        #expect(log.stops.count == 2)
+        #expect(log.stops.allSatisfy { if case .failed = $0 { true } else { false } })
+        #expect(await monitor.status.mode == .background)
+        #expect(await monitor.isSampling)
+        await monitor.pause()
+        collector.cancel()
+
+        // Every 10 minutes after that, and a working tick starts the schedule over.
+        let steady = Fixture(processes: ScriptedProcessSampler(failOnCalls: [1, 2, 3, 4]))
+        await steady.monitor.configure(configuration(), keepWatching: true)
+        #expect(await eventually { await steady.monitor.status.lastTickAt != nil })
+        #expect(steady.retries.sleeps == [30, 120, 600, 600])
+        await steady.monitor.pause()
+    }
+
+    @Test("Pause cancels a pending retry")
+    func pauseCancelsRetry() async {
+        // The 30 s wait takes 3 s here, time enough to pause.
+        let fixture = Fixture(processes: ScriptedProcessSampler(failOnCalls: [1]), retries: SleepRecorder(millisecondsPerSecond: 100))
+        let monitor = fixture.monitor
+        await monitor.configure(configuration(), keepWatching: true)
+        #expect(await eventually { fixture.retries.sleeps == [30] })
+        await monitor.pause()
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(fixture.calls == 1)
+        #expect(await monitor.status.mode == .paused(.user))
     }
 
     @Test("Background/ has no action path and no network code (ADR-0008 §3)")

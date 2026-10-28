@@ -298,6 +298,24 @@ public actor HistoryStore {
         return (result[0], result[1], result[2])
     }
 
+    /// `PRAGMA quick_check`: false when the file is damaged. Run after an unclean exit; the app
+    /// only reports the result, and never deletes or renames history by itself.
+    public func integrityCheck() throws -> Bool {
+        guard let db else { throw Failure.open("closed") }
+        var results: [String] = []
+        do {
+            try query(db, "PRAGMA quick_check", []) { results.append($0.text(0)) }
+        } catch {
+            // Damage can stop the check itself rather than produce rows.
+            let code = sqlite3_errcode(db) & 0xff
+            if code == SQLITE_CORRUPT || code == SQLITE_NOTADB { return false }
+            throw error
+        }
+        let ok = results == ["ok"]
+        if !ok { HeatLensLog.error(.history, "history integrity check failed", ["problems": .count(results.count)]) }
+        return ok
+    }
+
     /// Closes the database. Further calls throw.
     public func close() {
         sqlite3_close(db)

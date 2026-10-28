@@ -78,6 +78,35 @@ struct HistoryStoreTests {
         #expect(try await store.counts().samples == 1)
     }
 
+    @Test("integrityCheck: a fresh store passes; one with bytes overwritten mid-file fails")
+    func integrity() async throws {
+        let url = scratchURL()
+        let store = try HistoryStore(url: url)
+        #expect(try await store.integrityCheck())
+        let start = Date(timeIntervalSince1970: 2_000_000_000)
+        for i in 0..<2_000 {
+            let t = start.addingTimeInterval(TimeInterval(i * 5))
+            try await store.record(point(t), projects: [HistoryProjectPoint(timestamp: t, projectID: "/users/someone/developer/app", name: "app",
+                                                                           cpuPercent: Double(i % 50), memoryBytes: 64 << 20, watts: nil)],
+                                   events: [])
+        }
+        #expect(try await store.integrityCheck())
+        // Closing the last connection checkpoints the WAL into the main file.
+        await store.close()
+
+        let size = try #require(try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int)
+        let page = 4_096
+        #expect(size > 8 * page)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seek(toOffset: UInt64(size / 2 / page * page))
+        try handle.write(contentsOf: Data(repeating: 0x5A, count: page))
+        try handle.close()
+
+        let damaged = try HistoryStore(url: url)
+        #expect(try await damaged.integrityCheck() == false)
+        await damaged.close()
+    }
+
     @Test("ticks older than an hour roll up into minutes: busy averaged, peaks and heat kept as maxima")
     func rollup() async throws {
         let clock = TestClock()

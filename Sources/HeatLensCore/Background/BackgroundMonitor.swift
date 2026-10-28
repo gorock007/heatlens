@@ -70,7 +70,8 @@ public enum BackgroundEvent: Sendable {
 /// - With "Keep watching in the background" off it is today's Live: it samples only while a
 ///   viewer is attached, at the viewer's interval, and pauses itself after 15 minutes.
 /// - With it on, a viewer leaving, or 15 minutes of foreground, drops to `SamplingPolicy`'s
-///   cadence instead, until Pause or the app quits.
+///   cadence instead, until Pause or the app quits. A session that fails is tried again after
+///   30 s, 2 min, then every 10 min (`retryDelays`); with it off a failure waits for `resume()`.
 ///
 /// Calls into `LiveMonitor` run one at a time in the order they were asked for, so a quick
 /// pause and resume can't start two sessions or leave none.
@@ -89,9 +90,12 @@ public actor BackgroundMonitor {
     /// A tick sends up to three events (tick, alerts, status); a slow subscriber loses old
     /// ticks first, not the alerts that came after them.
     static let bufferDepth = 8
+    /// Waits before each retry of a failed session with Keep watching on; the last repeats.
+    public static let retryDelays: [TimeInterval] = [30, 2 * 60, 10 * 60]
 
     private let live: LiveMonitor
     private let now: @Sendable () -> Date
+    private let retrySleep: @Sendable (TimeInterval) async throws -> Void
     private var configuration: LiveConfiguration?
     private var keepWatching = false
     /// The panel's interval while someone is looking at Live.
@@ -112,21 +116,27 @@ public actor BackgroundMonitor {
     /// The current session's last decision, nil until its first tick.
     private var decision: SamplingPolicy.Decision?
     private var ring = RecentAlerts(limit: BackgroundMonitor.recentAlertLimit)
+    /// Failures since the last tick that worked; picks the next retry's wait.
+    private var failures = 0
+    private var retry: Task<Void, Never>?
     public private(set) var status: BackgroundStatus
 
     public init(monitor: LiveMonitor = LiveMonitor()) {
         self.init(monitor: monitor, now: { Date() })
     }
 
-    /// Tests inject the clock for the 15-minute rule.
-    init(monitor: LiveMonitor, now: @escaping @Sendable () -> Date) {
+    /// Tests inject the clock for the 15-minute rule, and the wait before a retry.
+    init(monitor: LiveMonitor, now: @escaping @Sendable () -> Date,
+         retrySleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
         live = monitor
         self.now = now
+        self.retrySleep = retrySleep
         status = BackgroundStatus(mode: .paused(.notConfigured), since: now())
     }
 
     deinit {
         consumer?.cancel()
+        retry?.cancel()
         for subscriber in subscribers.values { subscriber.continuation.finish() }
     }
 
@@ -170,6 +180,7 @@ public actor BackgroundMonitor {
 
     /// Stops sampling until `resume()`, whatever the mode.
     public func pause() async {
+        cancelRetry()
         hold = .user
         reconcile()
         await queue?.value
@@ -178,6 +189,7 @@ public actor BackgroundMonitor {
     /// Clears Pause, the 15-minute pause or a failure, and samples again if a viewer is attached
     /// or Keep watching is on.
     public func resume() async {
+        cancelRetry()
         hold = nil
         reconcile()
         await queue?.value
@@ -298,6 +310,7 @@ public actor BackgroundMonitor {
         case .tick(let tick):
             latest = tick
             decision = tick.sampling
+            failures = 0
             ring.append(tick.alerts)
             emit(.tick(tick))
             if !tick.alerts.isEmpty { emit(.alerts(tick.alerts)) }
@@ -314,7 +327,38 @@ public actor BackgroundMonitor {
         case .failed(let message):
             hold = .failed(message)
             reconcile()
+            if keepWatching { scheduleRetry() }
         }
+    }
+
+    // MARK: - Retry
+
+    /// Keep watching is on and the session failed: start it again after the next wait in
+    /// `retryDelays`. Pause, resume or a working tick ends the schedule.
+    private func scheduleRetry() {
+        let delay = Self.retryDelays[min(failures, Self.retryDelays.count - 1)]
+        failures += 1
+        let attempt = failures
+        retry?.cancel()
+        retry = Task { [retrySleep, weak self] in
+            do { try await retrySleep(delay) } catch { return }
+            await self?.retryNow(attempt: attempt, after: delay)
+        }
+    }
+
+    private func retryNow(attempt: Int, after delay: TimeInterval) {
+        guard !Task.isCancelled, attempt == failures, case .failed = hold else { return }
+        retry = nil
+        guard keepWatching else { return }
+        HeatLensLog.notice(.background, "retrying failed session", ["attempt": .count(attempt), "after": .seconds(delay)])
+        hold = nil
+        reconcile()
+    }
+
+    private func cancelRetry() {
+        retry?.cancel()
+        retry = nil
+        failures = 0
     }
 
     // MARK: - Status and subscribers

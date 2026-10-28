@@ -27,6 +27,7 @@ struct LiveView: View {
     private var live: some View {
         VStack(alignment: .leading, spacing: 12) {
             Controls(model: model)
+            RecoveryNotices(recovery: CrashRecovery.shared)
             if let tick = model.latest {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -177,6 +178,54 @@ private struct Controls: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+/// After an unclean exit: the one-time notice with Show crash reports, and a damaged history
+/// file with Delete history (docs/v2/PHASE-4-PLAN.md, 4e).
+private struct RecoveryNotices: View {
+    let recovery: CrashRecovery
+    @State private var deleting = false
+
+    var body: some View {
+        if let notice = recovery.uncleanExitNotice {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("Show crash reports") { recovery.showCrashReports() }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .help("Open the crash reports folder in Finder. HeatLens doesn't read them.")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .onAppear { recovery.noticeShown() }
+            .onDisappear { recovery.panelClosed() }
+        }
+        if recovery.historyDamaged {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label("History file is damaged", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                Spacer(minLength: 0)
+                Button("Delete history") {
+                    deleting = true
+                    Task {
+                        await recovery.deleteHistory()
+                        deleting = false
+                    }
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+                .disabled(deleting)
+                .help("Delete the history file. Live goes on sampling either way.")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
     }
 }
