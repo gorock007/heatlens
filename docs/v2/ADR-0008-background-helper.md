@@ -249,8 +249,15 @@ helper. The baseline is a tick costing about 56 ms of CPU (§2.8.6: 0.73 s for ~
   be **≤ 25 MB** (the probe peaked at 19.4 MB over 15 minutes, §2.8).
 - **Wake-ups:** one timer per interval and none between ticks. `ProcessType Adaptive` lets launchd
   treat the helper as background work except while it answers the app.
-- **XPC cost:** a `.full` push of a 1,000-process tick must encode and decode in **≤ 5 ms** in a
-  release build (test). `.summary` pushes are a few KB.
+- **XPC cost:** a `.full` push of a 1,000-process tick must encode and decode in **≤ 80 ms of CPU**
+  (test `tickCost`). The original 5 ms target wasn't reachable with `Codable`. Measured in
+  4j (release): 24 ms encode + 31 ms decode, 358 KB on the wire, and the cost is almost all
+  Foundation's `Codable`, not the plist format. JSON is no faster, and dropping the process
+  list still leaves ~21 ms. Only `.full` pushes pay it, and only while the Live view is visible.
+  That's ~1.1% of one core at 5 s, but ~2.7% at the 2 s picker, which is over ADR-0003's 2%.
+  4k measures this end to end and, if needed, slims `.full` to the top lists and groups. A
+  hand-written binary format was rejected: it would put a custom parser at the security
+  boundary. `.summary` pushes are a few KB. (Ruling 2026-10-28, on 4j's question.)
 - **Proving command** (4a adds the flag): `/usr/bin/time -l .build/release/heatlens-probe
   --background 900`, which prints each tick's interval, its reason and its cost. Results go in
   PERFORMANCE.md §2.9.
