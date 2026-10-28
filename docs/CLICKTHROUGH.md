@@ -168,3 +168,29 @@ keep the panel open; run the two 40-second placeholders from the checkout as spe
 the brief. Confirm the three timeline events and inference label, then history growth and
 deletion. Restore settings and quit. Activity Monitor comparison and process-detail repository
 attribution outside Live were not checked in this phase.
+
+## v2 Phase 4 (background watching, incident export)
+
+Debug build, driven by a worker on 2026-10-28 (brief 4c, which also covered 4i). Counts and times
+describe that run, not fixed expectations.
+
+| Step | Check | Result | Observation |
+|---|---|---|---|
+| 1 | Launch | pass | "Keep watching in the background" under Settings → Background, off |
+| 2 | Alerts on (CPU 60 %), Background on | pass | Status line "Watching · every 5 s (incident)" at once (a swap alert had just fired); back to idle about 2 min later |
+| 3–4 | Panel closed, 8 `yes` fixtures on 11 cores | pass | CPU notification delivered with the panel closed after 2 min 8 s, default urgency (not Time Sensitive); header "every 5 s (incident)", "every 10 s" on battery |
+| 5 | Load stopped | pass | Back to idle 2–2.5 min later: "every 60 s (idle, on battery)" (the Mac was unplugged) |
+| 6 | Idle CPU, panel closed, on AC | pass | 0.22 s of CPU per 60 s (`ps -o time=` every 30 s) |
+| 7 | Quit; relaunch; switch off | pass | Quit leaves no HeatLens process; relaunch with the switch on starts background mode with no panel; switch off stops sampling at once, and closing the panel stops Live again |
+| E1 | Export from the alert banner, Markdown | pass | The Save panel doesn't close the (detached) menu-bar panel; saving dismisses the sheet |
+| E2 | Export, JSON, anonymised | pass | Only "Project A/B/C"; no real project or folder names |
+| E3 | `grep -nE "PID [0-9]\|$HOME"` on both files | pass | No output |
+| E4 | Export… → Save… → Cancel | pass | No file written; the sheet stays open |
+
+Not checked: a real sleep and wake, Low Power Mode, clicking the notification, the 15-minute
+foreground fallback (unit-tested), and launch at login with both switches on.
+
+Driving notes: the attached panel closes between separate `osascript` runs, so detach it first with
+a CoreGraphics drag on its title. Save… stays disabled for about a second while the report is
+prepared. Escape cancels the Save panel. Banner alerts last 2 minutes, so each export needs a fresh
+alert.

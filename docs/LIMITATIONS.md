@@ -25,7 +25,11 @@
 10. Live mode doesn't sample CPU for root and other-user processes, because it never runs `ps`.
     Scan now still includes them.
 11. Live mode keeps at most 150 updates of trend history in memory and forgets them when it
-    stops. It pauses itself after 15 minutes and stops when the panel closes.
+    stops. With "Keep watching in the background" off (the default), it pauses itself after 15
+    minutes and stops when the panel closes. With it on, sampling goes on after the panel closes,
+    every 30 s on power, 60 s on battery and 5 or 10 s while something is busy (120 s in Low Power
+    Mode), until you press Pause or quit HeatLens. Quitting stops it. Nothing samples while
+    HeatLens isn't running.
 12. Docker data needs "Docker containers" on in Settings, and by default only reads Docker
     Desktop's local socket (or a `unix://` `DOCKER_HOST`). Colima, OrbStack and Podman are
     untested. At most 20 running containers get CPU and memory per reading. With "Allow stopping

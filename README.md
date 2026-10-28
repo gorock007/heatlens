@@ -87,7 +87,10 @@ swift run heatlens-probe
 - Fully local: no account or API key. The only network request is the update check, and only when you click Check for updates.
 - No telemetry or analytics.
 - No file contents are read.
-- Nothing is stored except user settings, and the local history if you turn it on.
+- Nothing is stored except user settings, and the local history if you turn it on. HeatLens
+  writes short operational notes (session start and stop, mode changes, errors) to the macOS
+  unified log, which macOS keeps for a few days, with process and project names hidden. It keeps
+  no log file of its own. To read them: `log show --last 1h --info --predicate 'subsystem == "dev.heatlens"'`.
 - Reports redact home paths and process arguments by default.
 - Optional thermal alert, off by default: when macOS reports serious heat, HeatLens runs one scan
   and posts one notification naming the top culprit, at most every 30 minutes. Nothing runs in between.
@@ -100,6 +103,11 @@ swift run heatlens-probe
 - History (v2, off by default): with "Keep history" on, Live mode's updates are saved in
   `~/Library/Application Support/HeatLens/history.sqlite` (owner-only), at most 30 days. Never
   command lines or file contents. Settings → Delete history removes it.
+- Keep watching in the background (v2, off by default): after you close the panel, HeatLens keeps
+  sampling at a slow, adaptive interval so alerts and history keep working. Quit HeatLens to stop.
+- Export incident (v2): from an explanation, an alert or the Timeline's busiest moment, saves a
+  redacted Markdown or JSON report only where you choose. It leaves out PIDs, paths, command
+  lines and container IDs, and can replace project names with "Project A, B…".
 - Optional global shortcut ⌃⌥H, off by default, opens or closes the panel from any app. It needs no
   Accessibility permission.
 
