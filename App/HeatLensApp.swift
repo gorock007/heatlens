@@ -19,6 +19,7 @@ struct HeatLensApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusPanel: StatusPanelController?
     private var thermalAlerts: ThermalAlertService?
+    private var liveAlerts: LiveAlertService?
     private var hotkey: GlobalHotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -49,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusPanel.onClose = { live.stop() }
         self.statusPanel = statusPanel
         thermalAlerts = ThermalAlertService(model: model) { statusPanel.show() }
+        // After ThermalAlertService, the notification delegate that presents and opens these too.
+        liveAlerts = LiveAlertService(live: live, settings: settings)
         hotkey = GlobalHotkey(settings: settings) { statusPanel.toggle() }
         #if DEBUG
         thermalAlerts?.simulateFromLaunchArguments()

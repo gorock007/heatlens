@@ -29,6 +29,9 @@ struct LiveView: View {
                         if !tick.explanations.isEmpty {
                             ExplanationsCard(explanations: tick.explanations)
                         }
+                        if !tick.alerts.isEmpty {
+                            AlertBanner(alerts: tick.alerts)
+                        }
                         LiveOverview(tick: tick)
                         if !tick.projects.usages.isEmpty {
                             ProjectsCard(breakdown: tick.projects, groups: tick.groups, limit: 4)
@@ -170,6 +173,11 @@ private struct LiveOverview: View {
                     Text(Format.pressure(system.memory.pressure))
                 }
                 GridRow {
+                    Text("Memory used").foregroundStyle(.secondary)
+                    Text(system.memory.availablePercent.map { "\(100 - min(max($0, 0), 100))%" } ?? "Unavailable")
+                        .help("100 minus the kernel's available-memory level (kern.memorystatus_level). Live's memory alert checks this number.")
+                }
+                GridRow {
                     Text("Swap").foregroundStyle(.secondary)
                     Text("\(Format.bytes(system.memory.swapUsedBytes)) used")
                 }
@@ -177,6 +185,24 @@ private struct LiveOverview: View {
             }
             .font(.callout)
         }
+    }
+}
+
+/// One line for the alerts that fired on this update; gone on the next update that has none.
+private struct AlertBanner: View {
+    let alerts: [HeatLensCore.Alert]
+
+    var body: some View {
+        let first = alerts[0]
+        let more = alerts.count > 1 ? " · +\(alerts.count - 1) more" : ""
+        Label(first.title + more, systemImage: "bell.badge")
+            .font(.caption)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .help(alerts.map { $0.title + " — " + $0.suggestion }.joined(separator: "\n"))
     }
 }
 

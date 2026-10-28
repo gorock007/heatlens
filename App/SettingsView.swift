@@ -84,6 +84,7 @@ struct SettingsView: View {
                 }
 
                 ThermalAlertSection(settings: settings)
+                AlertSettingsSection(settings: settings)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle("Open HeatLens with ⌃⌥H", isOn: $settings.globalHotkeyEnabled)

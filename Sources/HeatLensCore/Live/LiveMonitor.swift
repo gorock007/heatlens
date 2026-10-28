@@ -24,12 +24,14 @@ public struct LiveConfiguration: Sendable {
     public var projectMappings: [ProjectMapping]
     /// Where ticks are kept when the user turned on "Keep history"; nil writes nothing.
     public var history: HistoryStore?
+    /// The user's alert rules (brief 3c); off unless turned on in Settings.
+    public var alerts: AlertConfiguration
 
     public init(interval: TimeInterval = 5, hardware: any HardwareSensorProviding = DisabledHardwareProvider(),
                 docker: any DockerSampling = DisabledDockerSampler(), userRules: [WorkloadRule] = [],
                 autoPauseAfter: TimeInterval = 15 * 60, historyCapacity: Int = 150, topCount: Int = 12,
                 projectLocator: ProjectRootLocator? = nil, projectMappings: [ProjectMapping] = [],
-                history: HistoryStore? = nil) {
+                history: HistoryStore? = nil, alerts: AlertConfiguration = .off) {
         self.interval = Self.clamped(interval)
         self.hardware = hardware
         self.docker = docker
@@ -40,6 +42,7 @@ public struct LiveConfiguration: Sendable {
         self.projectLocator = projectLocator
         self.projectMappings = projectMappings
         self.history = history
+        self.alerts = alerts
     }
 
     static func clamped(_ interval: TimeInterval) -> TimeInterval {
@@ -72,6 +75,8 @@ public struct LiveTick: Sendable {
     /// Concurrency bursts explained in plain words (brief 3b): recent first, at most
     /// `ConcurrencyRules.limit`, each kept until 10 minutes after its burst ends.
     public var explanations: [Explanation] = []
+    /// Alerts that fired on this tick (brief 3c); empty on most ticks.
+    public var alerts: [Alert] = []
     /// This session's timeline so far, in memory: points, busiest projects and events, bounded
     /// like the trend ring.
     public var timeline: HistoryWindow = .empty
@@ -98,6 +103,8 @@ public actor LiveMonitor {
     private var continuation: AsyncStream<LiveEvent>.Continuation?
     private var interval: TimeInterval = 5
     private var sessionID = 0
+    /// Outlives a session, so an alert's cooldown holds across Pause and Start. In memory only.
+    private var alertEvaluator = AlertEvaluator()
 
     public init(processSampler: some ProcessSampling = LibprocProcessSampler(),
                 systemSampler: some SystemSampling = HostSystemSampler(readsPmset: false)) {
@@ -151,6 +158,12 @@ public actor LiveMonitor {
         interval = LiveConfiguration.clamped(newValue)
     }
 
+    /// Alert settings changed while a session runs; takes effect from the next tick. Hold and
+    /// cooldown timers are kept.
+    public func setAlerts(_ configuration: AlertConfiguration) {
+        alertEvaluator.configuration = configuration
+    }
+
     private func stop(session id: Int) {
         if id == sessionID { stop() }
     }
@@ -177,6 +190,7 @@ public actor LiveMonitor {
         var historyFailure: String?
         var detector = TimelineDetector()
         var concurrency = ConcurrencyRules()
+        alertEvaluator.configuration = configuration.alerts
         var timeline = (points: [HistoryPoint](), projects: [HistoryProjectPoint](), events: [TimelineEvent]())
         do {
             var previousProcesses = try processSampler.snapshot()
@@ -212,6 +226,8 @@ public actor LiveMonitor {
                 let explained = concurrency.explanations(for: tick)
                 tick.explanations = concurrency.current
                 tick.events += explained.map { $0.timelineEvent(at: snapshot.startedAt.addingTimeInterval(snapshot.interval)) }
+                tick.alerts = alertEvaluator.alerts(for: tick)
+                tick.events += tick.alerts.map(\.timelineEvent)
                 let point = HistoryRecorder.point(from: tick)
                 let projectPoints = HistoryRecorder.projectPoints(from: tick)
                 timeline.points.append(point)

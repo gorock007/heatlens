@@ -36,6 +36,9 @@ final class SettingsModel {
         static let liveInterval = "liveInterval"
         static let keepHistory = "keepHistory"
         static let historyRetentionDays = "historyRetentionDays"
+        static let liveAlertsEnabled = "liveAlertsEnabled"
+        static func alertRuleEnabled(_ kind: AlertRule.Kind) -> String { "liveAlert.\(kind.rawValue).enabled" }
+        static func alertThreshold(_ kind: AlertRule.Kind) -> String { "liveAlert.\(kind.rawValue).on" }
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -88,6 +91,18 @@ final class SettingsModel {
             HistoryService.shared.setRetention(days: historyRetentionDays)
         }
     }
+    /// Opt-in, off by default: alert rules checked only while Live runs (brief 3c).
+    var liveAlertsEnabled: Bool {
+        didSet { defaults.set(liveAlertsEnabled, forKey: Key.liveAlertsEnabled) }
+    }
+    /// Each rule's own switch; all on once the master switch is on.
+    var alertRulesEnabled: [AlertRule.Kind: Bool] {
+        didSet { for (kind, enabled) in alertRulesEnabled { defaults.set(enabled, forKey: Key.alertRuleEnabled(kind)) } }
+    }
+    /// Each rule's *on* threshold, one of `AlertRule.thresholdChoices`; its *off* follows.
+    var alertThresholds: [AlertRule.Kind: Double] {
+        didSet { for (kind, on) in alertThresholds { defaults.set(on, forKey: Key.alertThreshold(kind)) } }
+    }
     /// Set by `GlobalHotkey` when ⌃⌥H couldn't be registered, usually because another app holds it.
     var globalHotkeyConflict = false
     /// True when the user has turned HeatLens notifications off in System Settings.
@@ -114,6 +129,16 @@ final class SettingsModel {
         keepHistory = defaults.bool(forKey: Key.keepHistory)
         let storedRetention = defaults.integer(forKey: Key.historyRetentionDays)
         historyRetentionDays = HistoryStore.retentionChoices.contains(storedRetention) ? storedRetention : HistoryStore.defaultRetentionDays
+        liveAlertsEnabled = defaults.bool(forKey: Key.liveAlertsEnabled)
+        var rulesEnabled: [AlertRule.Kind: Bool] = [:]
+        var thresholds: [AlertRule.Kind: Double] = [:]
+        for kind in AlertRule.Kind.allCases {
+            rulesEnabled[kind] = defaults.object(forKey: Key.alertRuleEnabled(kind)) as? Bool ?? true
+            let stored = defaults.object(forKey: Key.alertThreshold(kind)) as? Double
+            thresholds[kind] = AlertRule.defaults(kind, on: stored ?? AlertRule.defaults(kind).on).on
+        }
+        alertRulesEnabled = rulesEnabled
+        alertThresholds = thresholds
         refreshLaunchAtLoginStatus()
     }
 
@@ -132,6 +157,23 @@ final class SettingsModel {
 
     var exclusions: ExclusionFilter {
         ExclusionFilter(processNames: excludedProcessNames, projectPrefixes: excludedProjectPrefixes)
+    }
+
+    /// What Live checks, from the switches and thresholds above.
+    var alertConfiguration: AlertConfiguration {
+        AlertConfiguration(isEnabled: liveAlertsEnabled, rules: AlertRule.Kind.allCases.map { kind in
+            AlertRule.defaults(kind, on: alertThresholds[kind] ?? AlertRule.defaults(kind).on, isEnabled: alertRulesEnabled[kind] ?? true)
+        })
+    }
+
+    /// Like `setThermalAlerts`: turning Live alerts on asks for notification permission.
+    func setLiveAlerts(_ enabled: Bool) {
+        liveAlertsEnabled = enabled
+        guard enabled else { return }
+        Task {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
+            await refreshNotificationStatus()
+        }
     }
 
     /// Turning alerts on asks for notification permission (macOS asks only the first time).

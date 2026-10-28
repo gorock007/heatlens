@@ -41,7 +41,8 @@ final class LiveModel {
                                               docker: options.dockerSampler, userRules: options.userRules,
                                               projectLocator: .shared, projectMappings: options.projectMappings,
                                               history: settings.keepHistory
-                                                ? HistoryService.shared.store(retentionDays: settings.historyRetentionDays) : nil)
+                                                ? HistoryService.shared.store(retentionDays: settings.historyRetentionDays) : nil,
+                                              alerts: settings.alertConfiguration)
         state = .starting
         let monitor = self.monitor
         consumer = Task { [weak self] in
@@ -76,6 +77,12 @@ final class LiveModel {
     func refreshNow() {
         let monitor = self.monitor
         Task { await monitor.refreshNow() }
+    }
+
+    /// Alert settings changed: takes effect from the next tick of a running session.
+    func setAlerts(_ configuration: AlertConfiguration) {
+        let monitor = self.monitor
+        Task { await monitor.setAlerts(configuration) }
     }
 
     func setInterval(_ interval: TimeInterval) {
