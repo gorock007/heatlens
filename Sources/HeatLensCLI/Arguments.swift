@@ -2,7 +2,7 @@ import Foundation
 
 /// The version `heatlens --version` and the MCP `serverInfo` report. Keep it equal to the app's
 /// `CFBundleShortVersionString` (`MARKETING_VERSION` in project.yml): a release bump updates both.
-public let heatlensVersion = "1.2.1"
+public let heatlensVersion = "1.2.2"
 
 public enum CLICommand: Equatable, Sendable {
     case help
