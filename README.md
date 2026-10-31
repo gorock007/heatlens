@@ -6,7 +6,7 @@ or under resource pressure. It runs fully offline: nothing is monitored until yo
 
 ## Install
 
-Website: https://heatlens-app.vercel.app
+Website: https://heatlens.gorock.sh
 
 Download [`HeatLens.dmg`](https://github.com/gorock007/heatlens/releases/latest) from the latest
 release, open it, and drag HeatLens to Applications. Requires macOS 14 or later on Apple Silicon.
