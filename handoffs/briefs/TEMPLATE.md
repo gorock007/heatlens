@@ -13,9 +13,13 @@ started: <YYYY-MM-DD HH:MM> · terminal: <filled in by jarvis spawn>
 <decisions already made, files to read first, the previous phase's handoff in handoffs/merged/>
 
 ## Scope
-- May touch: <paths>
+- May touch: <paths, comma-separated: `src/a.py`, `src/lib/` (a folder), `test/*.py`, or none; a note goes in parentheses after its path>
+  # `jarvis spawn` compares this row with every running worker's; prose around a path makes the scope unknown
 - Must not touch: <paths>
 - Shared files (edit minimally, name in handoff): <paths>
+
+## Relevant lessons
+<optional; Jarvis pastes the output of `jarvis lessons select --audience brief --paths-from <may-touch file>` here, or drops the section when it prints nothing>
 
 ## Phase
 <one phase. A job with several phases gets one brief per phase; the next one
@@ -24,7 +28,12 @@ is spawned with `jarvis spawn <brief> --after <this handoff>`>
 ## Checks
 <targeted checks for what this phase touches, output filtered: `pytest -q tests/x 2>&1 | tail -30`.
 A heavy suite (Docker, e2e, full) only through its wrapped script or
-`handoffs/bin/jarvis lock <class> --reuse -- <command>`, and only if this phase needs it>
+`handoffs/bin/jarvis lock <class> --reuse -- <command>`, and only if this phase needs it.
+Each command `jarvis merge --check --verify` should run goes in a block of its own:>
+
+```bash verify class=light timeout=300
+<command that proves done>
+```
 
 ## Questions first
 Put every question in one first handoff (`status: blocked`) and stop. After

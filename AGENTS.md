@@ -87,6 +87,9 @@ Several workers edit the same checkout at once, on separate terminals. So:
 - **Checks:** run `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer && swift build 2>&1 | tail -20 && swift test 2>&1 | tail -30`, then `scripts/run-app.sh --build-only 2>&1 | tail -20` for the app (Xcode is installed but not selected, so `DEVELOPER_DIR` is required) before handing off and report the results. Say
   plainly what you didn't check.  
   To bound a run that might hang, prefix it with `scripts/with-timeout.sh 600` (it kills the whole process group, including `swiftpm-testing-helper`).
+- **Never edit a test script while another worker may be running it:** bash
+  reads a script as it goes, so a mid-run edit can replay part of it in that
+  worker's checkout.
 
 ## When you finish a task
 

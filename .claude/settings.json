@@ -13,6 +13,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/handoffs/bin/jarvis hook prompt",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/handoffs/bin/jarvis hook event working",
+            "timeout": 10
           }
         ]
       }
@@ -24,6 +29,39 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/handoffs/bin/jarvis hook pretool",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/handoffs/bin/jarvis hook event notification",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/handoffs/bin/jarvis hook event ended",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/handoffs/bin/jarvis hook event stop",
             "timeout": 10
           }
         ]
@@ -45,5 +83,33 @@
     "browser-use@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": false
+  },
+  "permissions": {
+    "allow": [
+      "Bash(handoffs/bin/jarvis start)",
+      "Bash(./handoffs/bin/jarvis start)",
+      "Bash(handoffs/bin/jarvis status)",
+      "Bash(./handoffs/bin/jarvis status)",
+      "Bash(handoffs/bin/jarvis band)",
+      "Bash(./handoffs/bin/jarvis band)",
+      "Bash(handoffs/bin/jarvis sessions)",
+      "Bash(./handoffs/bin/jarvis sessions)",
+      "Bash(handoffs/bin/jarvis resources)",
+      "Bash(./handoffs/bin/jarvis resources)",
+      "Bash(handoffs/bin/jarvis doctor)",
+      "Bash(./handoffs/bin/jarvis doctor)",
+      "Bash(handoffs/bin/jarvis read *)",
+      "Bash(./handoffs/bin/jarvis read *)",
+      "Bash(handoffs/bin/jarvis log *)",
+      "Bash(./handoffs/bin/jarvis log *)",
+      "Bash(handoffs/bin/jarvis lessons status)",
+      "Bash(./handoffs/bin/jarvis lessons status)",
+      "Bash(handoffs/bin/jarvis lessons show)",
+      "Bash(./handoffs/bin/jarvis lessons show)",
+      "Bash(handoffs/bin/jarvis lessons show *)",
+      "Bash(./handoffs/bin/jarvis lessons show *)",
+      "Bash(handoffs/bin/jarvis usage)",
+      "Bash(./handoffs/bin/jarvis usage)"
+    ]
   }
 }
